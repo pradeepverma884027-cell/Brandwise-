@@ -1,0 +1,41 @@
+{
+  "admin@dermacare.com": {
+    "id": "usr_admin_001",
+    "email": "admin@dermacare.com",
+    "name": "System Administrator",
+    "role": "Administrator",
+    "role_key": "admin",
+    "tenant": "DermaCare Global Healthcare",
+    "initials": "SA",
+    "password_hash": "af5fd0d7d9fc7be5a4c1ce965081b68399d997bffed2458ec518d3eaa6594bd5",
+    "is_registered": true,
+    "created_at": "2026-10-27 17:37:11Z",
+    "updated_at": "2026-10-27 17:37:11Z"
+  },
+  "chief@dermacare.com": {
+    "id": "usr_chief_002",
+    "email": "chief@dermacare.com",
+    "name": "Dr. Aris Thorne",
+    "role": "Chief Governance Officer",
+    "role_key": "chief",
+    "tenant": "DermaCare Global Healthcare",
+    "initials": "CG",
+    "password_hash": "",
+    "is_registered": false,
+    "created_at": null,
+    "updated_at": null
+  },
+  "creator@dermacare.com": {
+    "id": "usr_1793124648_659",
+    "email": "creator@dermacare.com",
+    "name": "Sarah Jenkins",
+    "role": "Brand Creator",
+    "role_key": "user",
+    "tenant": "DermaCare Global Healthcare",
+    "initials": "SJ",
+    "password_hash": "50cfaea4b84c09455ab2d9b4a50f3f9d0e2548fa39cda72f5d5d7d0a7cc6eac8",
+    "is_registered": true,
+    "created_at": "2026-10-27 18:10:48Z",
+    "updated_at": "2026-10-27 18:10:48Z"
+  }
+}

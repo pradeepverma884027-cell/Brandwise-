@@ -1,0 +1,28 @@
+{
+  "admin@dermacare.com": {
+    "id": "usr_admin_001",
+    "email": "admin@dermacare.com",
+    "name": "System Administrator",
+    "role": "Administrator",
+    "role_key": "admin",
+    "tenant": "DermaCare Global Healthcare",
+    "initials": "AD",
+    "password_hash": "",
+    "is_registered": false,
+    "created_at": null,
+    "updated_at": null
+  },
+  "chief@dermacare.com": {
+    "id": "usr_chief_002",
+    "email": "chief@dermacare.com",
+    "name": "Dr. Aris Thorne",
+    "role": "Chief Governance Officer",
+    "role_key": "chief",
+    "tenant": "DermaCare Global Healthcare",
+    "initials": "CG",
+    "password_hash": "",
+    "is_registered": false,
+    "created_at": null,
+    "updated_at": null
+  }
+}
