@@ -221,10 +221,16 @@
   <script>
     (function() {
       // Synchronize port display to current active server port
-      const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : (window.location.protocol === 'http:' ? '80' : '8000'));
+      const currentPort = window.location.port;
       const portEl = document.getElementById('active-port-pill');
       if (portEl) {
-        portEl.textContent = `Port :${currentPort}`;
+        if (currentPort) {
+          portEl.textContent = `Port :${currentPort}`;
+        } else if (window.location.protocol === 'https:') {
+          portEl.textContent = 'Active: HTTPS (SSL)';
+        } else {
+          portEl.textContent = 'Port :8000';
+        }
       }
 
       // Query active server configuration to confirm port synchronization

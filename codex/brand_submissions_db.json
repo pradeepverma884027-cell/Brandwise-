@@ -1,5 +1,24 @@
 [
   {
+    "id": "SUB-9847",
+    "brand_name": "DermaCare Peptide Glow",
+    "channel": "instagram",
+    "channel_name": "Instagram Caption",
+    "submitted_by": "creator@dermacare.com",
+    "submitted_by_name": "Sarah Jenkins",
+    "submitted_at": "2026-10-28 19:02:29 UTC",
+    "content": "Glow with dermatological confidence. Our peptide serum hydrates 24h. #ad #skincare",
+    "claims": "Fact Register #FR-402 clinical trials.",
+    "evidence_file": "",
+    "compliance_score": 98,
+    "status": "APPROVED",
+    "reviewed_by": "System Administrator (Administrator)",
+    "reviewed_at": "2026-10-28 19:02:29 UTC",
+    "certificate_id": "BW-CERT-53710-2026",
+    "audit_hash": "95d18dc76d0b1367af51894ef0e197f6d9aa6822c3667e55c766e0044f34b374",
+    "review_notes": "All claims substantiate Fact Register #FR-402."
+  },
+  {
     "id": "SUB-9806",
     "brand_name": "DermaCare Peptide Glow",
     "channel": "instagram",
@@ -49,7 +68,7 @@
     "compliance_score": 88,
     "status": "REJECTED",
     "reviewed_by": "Dr. Aris Thorne (Chief Governance Officer)",
-    "reviewed_at": "2026-10-27 18:02:04 UTC",
+    "reviewed_at": "2026-10-28 19:02:29 UTC",
     "certificate_id": null,
     "audit_hash": null,
     "review_notes": "Please attach complete SPF 50 spectrophotometer test sheets."

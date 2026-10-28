@@ -1334,8 +1334,9 @@
       // so it is immediately scannable by mobile phones on the same network!
       const getInitialVerifyUrl = () => {
         if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+          const basePath = (window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1)) || '/';
           if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            return `${window.location.origin}/verify.html`;
+            return `${window.location.origin}${basePath}verify.html`;
           }
           const port = window.location.port || '8000';
           return `http://192.168.0.167:${port}/verify.html`;
@@ -1786,7 +1787,9 @@
         const reviewerSigner = (subItem && subItem.reviewed_by) ? subItem.reviewed_by : "Dr. Aris Thorne, Chief Governance Officer";
 
         // Verification QR URL with specific certificate ID
-        const baseVerify = customVerifyUrl.trim() || ((typeof window !== 'undefined' && window.location.origin) ? `${window.location.origin}/verify.html` : "http://localhost:8000/verify.html");
+        const basePath = (typeof window !== 'undefined' && window.location.pathname) ? (window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) || '/') : '/';
+        const fallbackUrl = (typeof window !== 'undefined' && window.location.origin) ? `${window.location.origin}${basePath}verify.html` : "http://localhost:8000/verify.html";
+        const baseVerify = customVerifyUrl.trim() || fallbackUrl;
         const separator = baseVerify.includes('?') ? '&' : '?';
         const verifyUrl = `${baseVerify}${separator}cert=${encodeURIComponent(certId)}`;
 
