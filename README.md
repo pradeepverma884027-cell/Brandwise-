@@ -159,9 +159,9 @@ python codex/tests/test_submissions_api.py
 
 * **Shivank Atri (Sk) — Product Architect, AI & Review Pipeline Lead (40% Core Share):**  
   Authored the original PRD, problem framing, and judging rubric alignment; designed the dual-tier deterministic + semantic review engine; implemented regex word boundary matching, superlative detection, and Fact Register schemas; engineered structured JSON prompt adapters; directed user testing and calibration.
-* **Full-Stack Backend Contributor (30% Core Share):**  
+* **Pradeep Kumar - Full-Stack Backend Contributor (30% Core Share):**  
   Engineered the unified Python server (`server.py`); developed REST endpoints (`/api/auth`, `/api/submissions`, `/api/local-ip`); built persistent JSON database synchronization with offline fallback mechanisms; authored automated test harnesses.
-* **Frontend & Design Systems Contributor (30% Core Share):**  
+* **Riyanshi Jain & Kartik Parashar - Frontend & Design Systems Contributor (30% Core Share):**  
   Built the React 18 Single-Page Application (`index.html`); designed interactive Evidence Cards, tracked-change diffing, and multi-channel switcher; implemented the Brand Approvals Queue (upload modals & admin approval controls); integrated jsPDF and QRCode.js vector rendering.
 
 ---
