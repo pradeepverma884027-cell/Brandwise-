@@ -5,6 +5,10 @@ import random
 import time
 import socket
 import hashlib
+import re
+import base64
+import threading
+from typing import Any, Dict, List, Optional
 import urllib.request
 import urllib.parse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -15,6 +19,113 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 WORKSPACE_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..")) if os.path.basename(BASE_DIR) == "codex" else BASE_DIR
 USERS_DB_FILE = os.path.join(WORKSPACE_ROOT, "codex", "supabase_users_db.json") if os.path.exists(os.path.join(WORKSPACE_ROOT, "codex")) else os.path.join(WORKSPACE_ROOT, "supabase_users_db.json")
 SUBMISSIONS_DB_FILE = os.path.join(WORKSPACE_ROOT, "codex", "brand_submissions_db.json") if os.path.exists(os.path.join(WORKSPACE_ROOT, "codex")) else os.path.join(WORKSPACE_ROOT, "brand_submissions_db.json")
+
+# Add backend directories to sys.path for core module imports
+for _backend_dir in [
+    os.path.join(WORKSPACE_ROOT, "codex", "backend"),
+    os.path.join(WORKSPACE_ROOT, "backend"),
+    os.path.join(BASE_DIR, "codex", "backend"),
+    os.path.join(BASE_DIR, "backend"),
+]:
+    if os.path.exists(_backend_dir) and _backend_dir not in sys.path:
+        sys.path.insert(0, _backend_dir)
+
+try:
+    from app.core.clinical_extractor import (
+        ClinicalTrialPDFExtractor,
+        evaluate_clinical_discrepancies,
+        DEFAULT_CLINICAL_STUDIES,
+        normalize_clinical_dossier
+    )
+    from app.core.review_engine import deterministic_engine
+except ImportError:
+    try:
+        from codex.backend.app.core.clinical_extractor import (
+            ClinicalTrialPDFExtractor,
+            evaluate_clinical_discrepancies,
+            DEFAULT_CLINICAL_STUDIES,
+            normalize_clinical_dossier
+        )
+        from codex.backend.app.core.review_engine import deterministic_engine
+    except ImportError as _imp_err:
+        print(f"[CLINICAL ENGINE] Warning importing clinical core: {_imp_err}")
+        ClinicalTrialPDFExtractor = None
+        evaluate_clinical_discrepancies = None
+        DEFAULT_CLINICAL_STUDIES = []
+        normalize_clinical_dossier = None
+        deterministic_engine = None
+
+# Server-level clinical studies store with thread-safety
+CLINICAL_STUDIES_LOCK = threading.RLock()
+CLINICAL_STUDIES_CATALOG: List[Dict[str, Any]] = []
+
+def init_clinical_studies_catalog():
+    """Initialize server-level clinical study catalog with default studies and fixtures."""
+    global CLINICAL_STUDIES_CATALOG
+    studies = []
+    loaded_ids = set()
+
+    # 1. Parse fixture PDFs from disk if available
+    fixture_files = [
+        ("Study_CS-2026-88.pdf", "CS-2026-88"),
+        ("LAB-AYUSH-904.pdf", "LAB-AYUSH-904")
+    ]
+    candidate_fixture_dirs = [
+        os.path.join(WORKSPACE_ROOT, "codex", "fixtures"),
+        os.path.join(BASE_DIR, "codex", "fixtures"),
+        os.path.join(BASE_DIR, "fixtures"),
+    ]
+
+    if ClinicalTrialPDFExtractor is not None:
+        for fname, expected_id in fixture_files:
+            for fdir in candidate_fixture_dirs:
+                fpath = os.path.join(fdir, fname)
+                if os.path.exists(fpath):
+                    try:
+                        extracted = ClinicalTrialPDFExtractor.extract_from_pdf(fpath)
+                        if extracted and extracted.get("study_id"):
+                            studies.append(extracted)
+                            loaded_ids.add(extracted.get("study_id"))
+                            print(f"[CLINICAL CATALOG] Loaded fixture PDF {fname} (ID: {extracted.get('study_id')})")
+                            break
+                    except Exception as e:
+                        print(f"[CLINICAL CATALOG] Notice extracting fixture {fname}: {e}")
+
+    # 2. Seed remaining defaults from DEFAULT_CLINICAL_STUDIES
+    if DEFAULT_CLINICAL_STUDIES:
+        for default_study in DEFAULT_CLINICAL_STUDIES:
+            sid = default_study.get("study_id")
+            if sid not in loaded_ids:
+                norm = normalize_clinical_dossier(default_study) if normalize_clinical_dossier else dict(default_study)
+                studies.append(norm)
+                loaded_ids.add(sid)
+                print(f"[CLINICAL CATALOG] Seeded default study record (ID: {sid})")
+
+    with CLINICAL_STUDIES_LOCK:
+        CLINICAL_STUDIES_CATALOG = studies
+    print(f"[CLINICAL CATALOG] Catalog initialized with {len(CLINICAL_STUDIES_CATALOG)} active studies.")
+
+init_clinical_studies_catalog()
+
+def extract_file_from_multipart(body: bytes, boundary: bytes):
+    """Extract filename and raw bytes from multipart/form-data body."""
+    delimiter = b"--" + boundary
+    parts = body.split(delimiter)
+    filename = "uploaded_study.pdf"
+    file_bytes = b""
+    for part in parts:
+        if b'filename="' in part:
+            header_end = part.find(b"\r\n\r\n")
+            if header_end != -1:
+                headers_part = part[:header_end].decode('utf-8', errors='ignore')
+                file_bytes = part[header_end + 4:].rstrip(b"\r\n-")
+                for line in headers_part.splitlines():
+                    if "filename=" in line:
+                        fn_match = re.search(r'filename="([^"]+)"', line)
+                        if fn_match:
+                            filename = fn_match.group(1)
+                break
+    return filename, file_bytes
 
 def find_frontend_dir():
     candidates = [
@@ -141,6 +252,10 @@ def load_brand_submissions():
             with open(SUBMISSIONS_DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list) and data:
+                    for s in data:
+                        s.setdefault("findings", [])
+                        s.setdefault("has_clinical_discrepancies", False)
+                        s.setdefault("clinical_discrepancies_count", 0)
                     SUPABASE_MOCK_TABLES["brand_submissions"] = data
                     return data
         except Exception as e:
@@ -530,6 +645,48 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        # Clinical Evidence Studies Catalog
+        if clean_path == "/api/clinical/studies":
+            with CLINICAL_STUDIES_LOCK:
+                studies_list = list(CLINICAL_STUDIES_CATALOG)
+            self.send_json_response({
+                "status": "success",
+                "count": len(studies_list),
+                "studies": studies_list
+            })
+            return
+
+        # Clinical Sample PDF Download / Stream
+        if clean_path == "/api/clinical/sample-pdf":
+            sample_candidates = [
+                os.path.join(WORKSPACE_ROOT, "codex", "fixtures", "Study_CS-2026-88.pdf"),
+                os.path.join(BASE_DIR, "codex", "fixtures", "Study_CS-2026-88.pdf"),
+                os.path.join(BASE_DIR, "fixtures", "Study_CS-2026-88.pdf"),
+            ]
+            found_sample = None
+            for p in sample_candidates:
+                if os.path.exists(p):
+                    found_sample = p
+                    break
+
+            if found_sample and os.path.exists(found_sample):
+                try:
+                    with open(found_sample, "rb") as f:
+                        pdf_data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Disposition", 'inline; filename="Study_CS-2026-88.pdf"')
+                    self.send_header("Content-Length", str(len(pdf_data)))
+                    self.end_headers()
+                    self.wfile.write(pdf_data)
+                    return
+                except Exception as e:
+                    self.send_json_response({"status": "error", "message": f"Failed reading sample PDF: {e}"}, status=500)
+                    return
+            else:
+                self.send_json_response({"status": "error", "message": "Sample PDF fixture Study_CS-2026-88.pdf not found"}, status=404)
+                return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -566,6 +723,41 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     score += 3
                 score = min(score, 98)
 
+                # Clinical evidence verification & findings integration
+                findings = []
+                content_to_check = f"{content} {claims}".strip() if claims else content
+                if deterministic_engine is not None:
+                    with CLINICAL_STUDIES_LOCK:
+                        active_catalog = list(CLINICAL_STUDIES_CATALOG)
+                    clinical_findings = deterministic_engine.check_clinical_evidence(content_to_check, active_catalog)
+                    for fc in clinical_findings:
+                        finding_dict = {
+                            "category": getattr(fc, "category", "claim"),
+                            "severity": getattr(fc, "severity", "high"),
+                            "explanation": getattr(fc, "explanation", ""),
+                            "source_ref": getattr(fc, "source_ref", ""),
+                            "confidence": getattr(fc, "confidence", 0.98),
+                            "span_start": getattr(fc, "span_start", None),
+                            "span_end": getattr(fc, "span_end", None),
+                            "highlighted_text": getattr(fc, "highlighted_text", None),
+                            "suggested_fix": getattr(fc, "suggested_fix", None),
+                            "rule_id": getattr(fc, "rule_id", "CLINICAL-EVIDENCE-01") or "CLINICAL-EVIDENCE-01"
+                        }
+                        findings.append(finding_dict)
+
+                        # Adjust compliance score based on findings severity
+                        sev = finding_dict["severity"].lower()
+                        if sev == "critical":
+                            score -= 20
+                        elif sev == "high":
+                            score -= 15
+                        elif sev == "medium":
+                            score -= 10
+                        else:
+                            score -= 5
+
+                score = max(20, min(score, 98))
+
                 now_utc = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
                 sub_id = f"SUB-{random.randint(9024, 9999)}"
 
@@ -581,6 +773,9 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     "claims": claims or "Fact Register verified under ISO 9001:2015 protocol.",
                     "evidence_file": evidence_file,
                     "compliance_score": score,
+                    "findings": findings,
+                    "has_clinical_discrepancies": len(findings) > 0,
+                    "clinical_discrepancies_count": len(findings),
                     "status": "PENDING_REVIEW",
                     "reviewed_by": None,
                     "reviewed_at": None,
@@ -607,10 +802,131 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({
                     "status": "success",
                     "message": f"Brand data ({sub_id}) successfully submitted for Administrator governance review!",
-                    "submission": new_sub
+                    "submission": new_sub,
+                    "findings": findings,
+                    "compliance_score": score
                 })
             except Exception as e:
                 self.send_json_response({"status": "error", "message": str(e)}, status=500)
+            return
+
+        # Ingest and Extract Clinical Evidence PDF Dossier
+        if clean_path == "/api/clinical/upload":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            content_type = self.headers.get('Content-Type', '')
+
+            try:
+                filename = "uploaded_study.pdf"
+                pdf_bytes = b""
+
+                if 'multipart/form-data' in content_type:
+                    boundary = None
+                    for part in content_type.split(";"):
+                        part = part.strip()
+                        if part.startswith("boundary="):
+                            boundary = part.split("=", 1)[1].strip('"').strip("'").encode('utf-8')
+                            break
+                    if not boundary:
+                        self.send_json_response({"status": "error", "message": "Missing boundary in multipart request"}, status=400)
+                        return
+                    filename, pdf_bytes = extract_file_from_multipart(body, boundary)
+                elif 'application/pdf' in content_type:
+                    pdf_bytes = body
+                    filename = self.headers.get("X-Filename", "uploaded_study.pdf")
+                else:
+                    data = json.loads(body.decode('utf-8')) if body else {}
+                    filename = data.get("filename", "uploaded_study.pdf")
+                    raw_b64 = data.get("file_data") or data.get("file") or data.get("pdf_data") or ""
+                    if not raw_b64:
+                        self.send_json_response({"status": "error", "message": "Missing file_data in upload request"}, status=400)
+                        return
+                    if "," in raw_b64 and "base64" in raw_b64.split(",")[0]:
+                        raw_b64 = raw_b64.split(",", 1)[1]
+                    pdf_bytes = base64.b64decode(raw_b64)
+
+                if not pdf_bytes or len(pdf_bytes) == 0:
+                    self.send_json_response({"status": "error", "message": "Uploaded PDF payload is empty"}, status=400)
+                    return
+
+                if ClinicalTrialPDFExtractor is None:
+                    self.send_json_response({"status": "error", "message": "ClinicalTrialPDFExtractor engine is unavailable"}, status=500)
+                    return
+
+                # Parse and extract clinical trial endpoints
+                extracted_study = ClinicalTrialPDFExtractor.extract_from_pdf(pdf_bytes)
+
+                # Persist PDF file to uploads directory
+                safe_filename = os.path.basename(filename) or f"study_{int(time.time())}.pdf"
+                upload_dirs = [
+                    os.path.join(WORKSPACE_ROOT, "codex", "uploads", "clinical_evidence"),
+                    os.path.join(WORKSPACE_ROOT, "uploads", "clinical_evidence")
+                ]
+                for udir in upload_dirs:
+                    try:
+                        os.makedirs(udir, exist_ok=True)
+                        with open(os.path.join(udir, safe_filename), "wb") as f:
+                            f.write(pdf_bytes)
+                    except Exception as save_err:
+                        print(f"[UPLOAD] Notice saving PDF copy in {udir}: {save_err}")
+
+                # Append / update in server-level catalog thread-safely
+                with CLINICAL_STUDIES_LOCK:
+                    study_id = extracted_study.get("study_id")
+                    updated = False
+                    if study_id and study_id != "UNKNOWN-STUDY":
+                        for idx, s in enumerate(CLINICAL_STUDIES_CATALOG):
+                            if s.get("study_id") == study_id:
+                                CLINICAL_STUDIES_CATALOG[idx] = extracted_study
+                                updated = True
+                                break
+                    if not updated:
+                        CLINICAL_STUDIES_CATALOG.append(extracted_study)
+
+                print(f"[CLINICAL UPLOAD] Successfully extracted study {extracted_study.get('study_id')} from {safe_filename}")
+                self.send_json_response({
+                    "status": "success",
+                    "message": f"Successfully extracted clinical evidence from {safe_filename}",
+                    "study": extracted_study
+                })
+            except ValueError as ve:
+                self.send_json_response({"status": "error", "message": str(ve)}, status=400)
+            except Exception as e:
+                self.send_json_response({"status": "error", "message": f"Failed processing clinical PDF: {str(e)}"}, status=500)
+            return
+
+        # Marketing Copy Discrepancy Verification against Clinical Evidence Dossiers
+        if clean_path == "/api/clinical/verify-copy":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body.decode('utf-8')) if body else {}
+                copy_text = data.get("copy_text") or data.get("text", "")
+                study_id = data.get("study_id")
+
+                if evaluate_clinical_discrepancies is None:
+                    self.send_json_response({"status": "error", "message": "Clinical discrepancy engine is unavailable"}, status=500)
+                    return
+
+                with CLINICAL_STUDIES_LOCK:
+                    if study_id:
+                        target_studies = [s for s in CLINICAL_STUDIES_CATALOG if s.get("study_id") == study_id]
+                        target_study_or_studies = target_studies[0] if len(target_studies) == 1 else (target_studies if target_studies else None)
+                    else:
+                        target_study_or_studies = list(CLINICAL_STUDIES_CATALOG)
+
+                result = evaluate_clinical_discrepancies(copy_text, target_study_or_studies)
+
+                self.send_json_response({
+                    "status": "success",
+                    "has_discrepancies": result.get("has_discrepancies", False),
+                    "discrepancies": result.get("discrepancies", []),
+                    "verified_claims": result.get("verified_claims", []),
+                    "primary_study": result.get("primary_study", {}),
+                    "extracted_endpoints_count": result.get("extracted_endpoints_count", 0)
+                })
+            except Exception as e:
+                self.send_json_response({"status": "error", "message": f"Clinical verification error: {str(e)}"}, status=500)
             return
 
         # 2. Administrator Approves Brand Submission & Releases Audit Certificate
