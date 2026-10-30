@@ -12,6 +12,8 @@ Performs fast, reproducible, and explainable rule checks without calling an LLM:
 import re
 import math
 import time
+import hashlib
+from datetime import datetime, timezone
 from typing import Any
 from dataclasses import dataclass, field
 
@@ -19,6 +21,15 @@ try:
     from app.core.clinical_extractor import ClinicalTrialPDFExtractor, evaluate_clinical_discrepancies
 except ImportError:
     from .clinical_extractor import ClinicalTrialPDFExtractor, evaluate_clinical_discrepancies
+
+CANONICAL_EVIDENCE_TYPES = [
+    "clinical_trial_certificate",
+    "cdsco_stage4_clearance",
+    "legal_waiver_signoff",
+    "lab_assay_report",
+    "influencer_contract_exemption",
+    "ayush_clinical_registry"
+]
 
 
 @dataclass
@@ -37,6 +48,8 @@ class FindingCandidate:
 
 class DeterministicReviewEngine:
     """Engine executing deterministic, non-LLM checks on submitted copy."""
+
+    CANONICAL_EVIDENCE_TYPES = CANONICAL_EVIDENCE_TYPES
 
     # Default regex patterns for common regulatory and superlative checks
     SUPERLATIVE_PATTERNS = [
@@ -352,80 +365,123 @@ class DeterministicReviewEngine:
         asset_metadata: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Inspect visual assets (logo geometry distortion, brand palette Delta E drift, disclaimer contrast).
+        Inspect visual assets (logo geometry distortion, brand palette RGB drift, disclaimer contrast, alt text).
         """
+        if not isinstance(asset_metadata, dict):
+            asset_metadata = {}
+
         violations = []
         aspect_ratio_drift = 0.0
+
         actual_ratio = asset_metadata.get("aspect_ratio")
         expected_ratio = asset_metadata.get("expected_aspect_ratio", 1.0)
+        if expected_ratio is None:
+            expected_ratio = 1.0
 
         # 1. Geometry aspect ratio check (tolerance +/- 2.0%)
-        if actual_ratio and expected_ratio:
-            aspect_ratio_drift = round(abs((actual_ratio - expected_ratio) / expected_ratio) * 100, 2)
-            if aspect_ratio_drift > 2.0:
-                violations.append({
-                    "id": "v-geom-01",
-                    "type": "logo_distortion",
-                    "severity": "high",
-                    "message": f"Brand logo geometry distorted by {aspect_ratio_drift}%. Maximum allowed distortion is 2.0%.",
-                    "source_ref": "Brand Identity Guidelines §1.2 (Logo Geometry Preservation)",
-                    "suggested_fix": f"Lock aspect ratio to {expected_ratio}:1 in layout canvas."
-                })
+        if actual_ratio is not None:
+            try:
+                act_val = float(actual_ratio)
+                exp_val = float(expected_ratio)
+                if exp_val > 0:
+                    aspect_ratio_drift = round(abs((act_val - exp_val) / exp_val) * 100, 2)
+                    if aspect_ratio_drift > 2.0:
+                        violations.append({
+                            "id": "v-geom-01",
+                            "type": "logo_distortion",
+                            "severity": "high",
+                            "message": f"Brand logo geometry distorted by {aspect_ratio_drift}%. Maximum allowed distortion is 2.0%.",
+                            "source_ref": "Brand Identity Guidelines §1.2 (Logo Geometry Preservation)",
+                            "suggested_fix": f"Lock aspect ratio to {expected_ratio}:1 in layout canvas."
+                        })
+            except (ValueError, TypeError, ZeroDivisionError):
+                aspect_ratio_drift = 0.0
 
-        # 2. Color palette drift check (RGB Euclidean distance / Delta E approximation)
+        # 2. Color palette drift check (RGB Euclidean distance)
         brand_palette = {
             "primary": (15, 23, 42),       # #0F172A Slate 900
             "accent": (2, 132, 199),       # #0284C7 Sky 600
             "success": (16, 185, 129),     # #10B981 Emerald 500
         }
-        detected_colors = asset_metadata.get("detected_hex_colors", [])
-        for hex_val in detected_colors:
-            clean_hex = hex_val.lstrip("#")
-            if len(clean_hex) == 6:
-                r, g, b = int(clean_hex[0:2], 16), int(clean_hex[2:4], 16), int(clean_hex[4:6], 16)
-                # Compute closest brand color
-                min_dist = float("inf")
-                closest_name = "primary"
-                for c_name, (br, bg, bb) in brand_palette.items():
-                    dist = math.sqrt((r - br) ** 2 + (g - bg) ** 2 + (b - bb) ** 2)
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_name = c_name
+        brand_hex_map = {
+            "primary": "#0F172A",
+            "accent": "#0284C7",
+            "success": "#10B981",
+        }
 
-                # If reasonably close but drifting (dist between 15 and 65)
-                if 15.0 < min_dist < 65.0:
-                    violations.append({
-                        "id": f"v-color-{clean_hex}",
-                        "type": "palette_drift",
-                        "severity": "medium",
-                        "message": f"Color #{clean_hex} deviates from approved {closest_name} brand palette (RGB drift delta: {round(min_dist, 1)}).",
-                        "source_ref": "Brand Visual System §2.1 (Color Fidelity)",
-                        "suggested_fix": f"Snap color to official brand palette (#{brand_palette[closest_name]})."
-                    })
+        detected_colors = asset_metadata.get("detected_hex_colors") or []
+        if isinstance(detected_colors, list):
+            for hex_val in detected_colors:
+                if not isinstance(hex_val, str):
+                    continue
+                clean_hex = hex_val.strip().lstrip("#")
+                if len(clean_hex) == 3:
+                    clean_hex = "".join([c * 2 for c in clean_hex])
+                if len(clean_hex) == 6:
+                    try:
+                        r = int(clean_hex[0:2], 16)
+                        g = int(clean_hex[2:4], 16)
+                        b = int(clean_hex[4:6], 16)
+                    except ValueError:
+                        continue
 
-        # 3. Disclaimer text contrast ratio check
+                    # Compute closest brand color
+                    min_dist = float("inf")
+                    closest_name = "primary"
+                    for c_name, (br, bg, bb) in brand_palette.items():
+                        dist = math.sqrt((r - br) ** 2 + (g - bg) ** 2 + (b - bb) ** 2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            closest_name = c_name
+
+                    # Boundary condition: 15.0 <= min_dist <= 65.0
+                    if 15.0 <= min_dist <= 65.0:
+                        violations.append({
+                            "id": f"v-color-{clean_hex}",
+                            "type": "palette_drift",
+                            "severity": "medium",
+                            "message": f"Detected color #{clean_hex} deviates by {min_dist:.1f} RGB units from approved brand palette ({closest_name}).",
+                            "source_ref": "Brand Visual Guidelines §2.1 (Color Palette Compliance)",
+                            "suggested_fix": f"Shift color to closest approved brand shade ({brand_hex_map[closest_name]})."
+                        })
+
+        # 3. Disclaimer text contrast ratio check (WCAG 2.2 AA minimum: 4.5:1)
         disclaimer_fg = asset_metadata.get("disclaimer_fg")
         disclaimer_bg = asset_metadata.get("disclaimer_bg")
         contrast_ratio = None
         if disclaimer_fg and disclaimer_bg:
-            contrast_ratio = self.calculate_contrast_ratio(disclaimer_fg, disclaimer_bg)
-            if contrast_ratio < 4.5:
-                violations.append({
-                    "id": "v-contrast-01",
-                    "type": "contrast_failure",
-                    "severity": "high",
-                    "message": f"Disclaimer contrast ratio ({contrast_ratio}:1) fails WCAG 2.2 AA requirement (minimum 4.5:1).",
-                    "source_ref": "WCAG 2.2 §1.4.3 (Contrast Minimum)",
-                    "suggested_fix": "Darken disclaimer font color or add a high-opacity backing card."
-                })
+            try:
+                contrast_ratio = self.calculate_contrast_ratio(str(disclaimer_fg), str(disclaimer_bg))
+                if contrast_ratio < 4.5:
+                    violations.append({
+                        "id": "v-contrast-01",
+                        "type": "contrast_failure",
+                        "severity": "high",
+                        "message": f"Disclaimer text contrast ratio {contrast_ratio:.2f}:1 fails WCAG 2.2 AA requirement (min 4.5:1).",
+                        "source_ref": "WCAG 2.2 §1.4.3 (Contrast Minimum)",
+                        "suggested_fix": "Increase luminance difference between disclaimer text and background."
+                    })
+            except (ValueError, TypeError, Exception):
+                contrast_ratio = None
 
-        is_compliant = len(violations) == 0
+        # 4. Missing alt-text check (WCAG 2.2 Non-text Content)
+        alt_text = asset_metadata.get("alt_text")
+        if not alt_text or not str(alt_text).strip():
+            violations.append({
+                "id": "v-alt-01",
+                "type": "missing_alt_text",
+                "severity": "medium",
+                "message": "Asset is missing descriptive alternative text for screen readers.",
+                "source_ref": "WCAG 2.2 §1.1.1 (Non-text Content)",
+                "suggested_fix": "Provide descriptive alt text for this visual asset."
+            })
+
         return {
-            "is_compliant": is_compliant,
+            "is_compliant": len(violations) == 0,
             "violations": violations,
             "aspect_ratio_drift": aspect_ratio_drift,
             "contrast_ratio": contrast_ratio,
-            "asset_id": asset_metadata.get("asset_id", "asset-001")
+            "asset_id": asset_metadata.get("asset_id") or "asset-001"
         }
 
     def adjudicate_counter_evidence(
@@ -438,43 +494,53 @@ class DeterministicReviewEngine:
         Interactive Evidence-Based Adjudication Gateway:
         Evaluates counter-evidence submitted by creator and dismisses/reverts allegations when substantiated.
         """
-        evidence_type = counter_evidence.get("evidence_type", "").lower()
-        ref_id = counter_evidence.get("reference_id", "").strip()
-        justification = counter_evidence.get("justification", "").strip()
-        doc_hash = counter_evidence.get("document_hash") or f"HASH-{hash(ref_id + justification) % 1000000:06d}"
+        if not isinstance(counter_evidence, dict):
+            counter_evidence = {}
 
-        valid_evidence_types = [
-            "clinical_trial_certificate",
-            "cdsco_stage4_clearance",
-            "legal_waiver_signoff",
-            "lab_assay_report",
-            "influencer_contract_exemption",
-            "ayush_clinical_registry"
-        ]
+        valid_evidence_types = self.CANONICAL_EVIDENCE_TYPES
 
-        if not ref_id or len(justification) < 10:
+        evidence_type = str(counter_evidence.get("evidence_type") or "").strip().lower()
+        ref_id = str(counter_evidence.get("reference_id") or "").strip()
+        justification = str(counter_evidence.get("justification") or "").strip()
+        doc_hash = counter_evidence.get("document_hash")
+
+        if not evidence_type or evidence_type not in valid_evidence_types:
             return {
                 "success": False,
                 "adjudication": "REJECTED_INSUFFICIENT_EVIDENCE",
-                "message": "Counter-evidence requires a valid reference ID and detailed justification (min 10 characters)."
+                "message": f"Invalid or missing evidence type '{evidence_type}'. Must be one of: {', '.join(valid_evidence_types)}."
             }
 
-        # Substantial check: matching evidence type with allegation category
-        # If clinical waiver or CDSCO clearance provided for claims, or legal waiver for disclosures/logo
-        reversal_accepted = True
-        restored_score = 15
+        if not ref_id:
+            return {
+                "success": False,
+                "adjudication": "REJECTED_INSUFFICIENT_EVIDENCE",
+                "message": "Counter-evidence requires a valid reference ID."
+            }
 
-        now_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if len(justification) < 10:
+            return {
+                "success": False,
+                "adjudication": "REJECTED_INSUFFICIENT_EVIDENCE",
+                "message": "Counter-evidence requires a detailed justification (min 10 characters)."
+            }
+
+        if not doc_hash or not str(doc_hash).strip():
+            payload = f"{allegation_id}:{evidence_type}:{ref_id}:{justification}".encode("utf-8")
+            doc_hash = hashlib.sha256(payload).hexdigest()[:16]
+        else:
+            doc_hash = str(doc_hash).strip()
+
         return {
             "success": True,
             "adjudication": "ALLEGATION_REVERTED_AND_DISMISSED",
             "allegation_id": allegation_id,
             "allegation_category": allegation_category,
-            "reversal_timestamp": now_utc,
+            "reversal_timestamp": datetime.now(timezone.utc).isoformat(),
             "document_hash": doc_hash,
             "evidence_reference": ref_id,
-            "evidence_type": evidence_type or "legal_waiver_signoff",
-            "restored_score_delta": restored_score,
+            "evidence_type": evidence_type,
+            "restored_score_delta": 15,
             "audit_note": f"Allegation {allegation_id} reverted and dismissed upon verification of counter-evidence '{ref_id}'. Justification: {justification}",
             "status": "dismissed_with_evidence"
         }
@@ -658,5 +724,6 @@ __all__ = [
     "DeterministicReviewEngine",
     "FindingCandidate",
     "ClinicalTrialPDFExtractor",
-    "evaluate_clinical_discrepancies"
+    "evaluate_clinical_discrepancies",
+    "CANONICAL_EVIDENCE_TYPES"
 ]

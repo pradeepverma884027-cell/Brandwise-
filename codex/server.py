@@ -1328,6 +1328,81 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({"status": "error", "message": str(e)}, status=500)
             return
 
+        # 5. Visual Asset Inspector: Geometry Distortion, Palette Drift, Contrast & Alt-Text
+        if clean_path == "/api/visual/inspect":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Invalid JSON payload: {str(json_err)}"}, status=400)
+                return
+
+            try:
+                if not isinstance(data, dict):
+                    self.send_json_response({"status": "error", "message": "Payload must be a JSON object"}, status=400)
+                    return
+                if deterministic_engine is None:
+                    self.send_json_response({"status": "error", "message": "Review engine is unavailable"}, status=500)
+                    return
+                result = deterministic_engine.inspect_visual_geometry_and_palette(data)
+                self.send_json_response({"status": "success", "result": result})
+            except Exception as e:
+                self.send_json_response({"status": "error", "message": f"Visual inspection error: {str(e)}"}, status=500)
+            return
+
+        # 6. Interactive Evidence-Based Adjudication Gateway
+        if clean_path == "/api/adjudication/submit":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Invalid JSON payload: {str(json_err)}"}, status=400)
+                return
+
+            try:
+                if not isinstance(data, dict):
+                    self.send_json_response({"status": "error", "message": "Payload must be a JSON object"}, status=400)
+                    return
+                if deterministic_engine is None:
+                    self.send_json_response({"status": "error", "message": "Adjudication engine is unavailable"}, status=500)
+                    return
+
+                allegation_id = data.get("allegation_id", "")
+                allegation_category = data.get("allegation_category", "")
+                counter_evidence = data.get("counter_evidence") or {}
+                if not isinstance(counter_evidence, dict):
+                    counter_evidence = {}
+
+                result = deterministic_engine.adjudicate_counter_evidence(allegation_id, allegation_category, counter_evidence)
+
+                if result.get("success"):
+                    audit_entry = {
+                        "id": f"audit-{int(time.time()*1000)}",
+                        "timestamp": result.get("reversal_timestamp") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "actor": "Compliance Adjudication Engine",
+                        "role": "automated_adjudicator",
+                        "action": "ALLEGATION_DISMISSED",
+                        "details": result.get("audit_note", f"Allegation {allegation_id} dismissed with evidence"),
+                        "document_hash": result.get("document_hash")
+                    }
+                    sync_to_supabase("audit_logs", audit_entry)
+                    self.send_json_response({
+                        "status": "success",
+                        "adjudication": result.get("adjudication"),
+                        "result": result
+                    })
+                else:
+                    self.send_json_response({
+                        "status": "rejected",
+                        "adjudication": result.get("adjudication", "REJECTED_INSUFFICIENT_EVIDENCE"),
+                        "result": result
+                    })
+            except Exception as e:
+                self.send_json_response({"status": "error", "message": f"Adjudication processing error: {str(e)}"}, status=500)
+            return
+
         self.send_json_response({"status": "error", "message": "Endpoint not found"}, status=404)
 
     def send_json_response(self, data, status=200):

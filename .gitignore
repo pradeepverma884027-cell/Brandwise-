@@ -1,0 +1,12 @@
+.agents/
+aktu_*
+claude_*
+cleaned_*
+debug_*
+extracted_*
+ryzen_*
+scratch_*
+script_*
+*.tmp
+uploads/
+codex/uploads/
