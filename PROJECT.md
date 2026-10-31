@@ -64,7 +64,7 @@ This project implements Improvement 2 consisting of:
 | M1 | `engine_core` | Visual Compliance Inspector & Counter-Evidence Adjudication Engine (`review_engine.py`) | none | DONE |
 | M2 | `backend_api` | REST Endpoints (`/api/visual/inspect`, `/api/adjudication/submit`), Audit Logging & Server Parity (`server.py`, `codex/server.py`) | M1 | DONE |
 | M3 | `frontend_spa` | Frontend Visual Inspector Tab, Preloaded Presets, Adjudication Modal & Tri-HTML Parity (`codex/frontend/index.html`, `index.html`, `docs/index.html`) | M2 | DONE |
-| M4 | `testing_verification` | Comprehensive Test Suites (`test_visual_compliance.py`, `test_adjudication.py`), Parity Verification & Git Deploy | M1, M2, M3 | IN_PROGRESS |
+| M4 | `testing_verification` | Comprehensive Test Suites (`test_visual_compliance.py`, `test_adjudication.py`), Parity Verification & Git Deploy | M1, M2, M3 | DONE |
 
 ---
 

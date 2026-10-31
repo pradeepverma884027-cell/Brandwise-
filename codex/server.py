@@ -603,7 +603,7 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
         if clean_path == "/api/channels":
             self.send_json_response({
                 "status": "success",
-                "count": 4,
+                "count": 6,
                 "channels": [
                     {
                         "id": "instagram",
@@ -639,6 +639,24 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                         "badge": "Long-Form Clinical Editorial",
                         "char_limit": 8000,
                         "rules_count": 4,
+                        "status": "active"
+                    },
+                    {
+                        "id": "hinglish_instagram",
+                        "name": "Instagram Caption (Hinglish)",
+                        "type": "vernacular_social",
+                        "badge": "Vernacular Social & Influencer",
+                        "char_limit": 2200,
+                        "rules_count": 5,
+                        "status": "active"
+                    },
+                    {
+                        "id": "hinglish_influencer",
+                        "name": "Influencer Video Script (Hinglish)",
+                        "type": "vernacular_script",
+                        "badge": "Vernacular Video & Reel Script",
+                        "char_limit": 3500,
+                        "rules_count": 5,
                         "status": "active"
                     }
                 ]
@@ -1401,6 +1419,135 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     })
             except Exception as e:
                 self.send_json_response({"status": "error", "message": f"Adjudication processing error: {str(e)}"}, status=500)
+            return
+
+        # 7. Multilingual & Code-Mixed (Hinglish) Advertising Compliance Engine
+        if clean_path == "/api/hinglish/check":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+
+            if not body or not body.strip():
+                self.send_json_response({"status": "error", "message": "Request payload cannot be empty"}, status=400)
+                return
+
+            try:
+                data = json.loads(body.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Invalid JSON payload: {str(json_err)}"}, status=400)
+                return
+
+            try:
+                if not isinstance(data, dict):
+                    self.send_json_response({"status": "error", "message": "Payload must be a JSON object"}, status=400)
+                    return
+
+                if not data:
+                    self.send_json_response({"status": "error", "message": "Payload cannot be empty"}, status=400)
+                    return
+
+                text = data.get("text")
+                if text is None:
+                    self.send_json_response({"status": "error", "message": "Field 'text' is required"}, status=400)
+                    return
+
+                if not isinstance(text, str):
+                    self.send_json_response({"status": "error", "message": "Field 'text' must be a string"}, status=400)
+                    return
+
+                channel = data.get("channel")
+                if channel is not None and not isinstance(channel, str):
+                    channel = str(channel)
+
+                custom_studies = data.get("clinical_studies")
+                if custom_studies is not None and not isinstance(custom_studies, (list, dict)):
+                    custom_studies = None
+
+                if deterministic_engine is None:
+                    self.send_json_response({"status": "error", "message": "Review engine is unavailable"}, status=500)
+                    return
+
+                # Acquire active clinical studies catalog for cross-referencing
+                if custom_studies is not None:
+                    active_catalog = custom_studies
+                else:
+                    with CLINICAL_STUDIES_LOCK:
+                        active_catalog = list(CLINICAL_STUDIES_CATALOG)
+
+                try:
+                    findings_raw = deterministic_engine.check_hinglish_and_regional_claims(
+                        text, channel=channel, clinical_studies=active_catalog
+                    )
+                except TypeError:
+                    findings_raw = deterministic_engine.check_hinglish_and_regional_claims(
+                        text, channel=channel
+                    )
+
+                serialized_findings = []
+                high_count = 0
+                medium_count = 0
+                low_count = 0
+                score = 100
+
+                for idx, fc in enumerate(findings_raw or []):
+                    if isinstance(fc, dict):
+                        f_dict = dict(fc)
+                    else:
+                        f_dict = {
+                            "category": getattr(fc, "category", "hinglish_claim"),
+                            "severity": getattr(fc, "severity", "high"),
+                            "explanation": getattr(fc, "explanation", ""),
+                            "source_ref": getattr(fc, "source_ref", ""),
+                            "confidence": getattr(fc, "confidence", 0.96),
+                            "span_start": getattr(fc, "span_start", None),
+                            "span_end": getattr(fc, "span_end", None),
+                            "highlighted_text": getattr(fc, "highlighted_text", None),
+                            "suggested_fix": getattr(fc, "suggested_fix", None),
+                            "rule_id": getattr(fc, "rule_id", None),
+                        }
+
+                    if not f_dict.get("id"):
+                        f_dict["id"] = f"h-claim-{idx + 1}"
+
+                    if not f_dict.get("status"):
+                        f_dict["status"] = "open"
+
+                    sev = str(f_dict.get("severity", "high")).lower()
+                    f_dict["severity"] = sev
+
+                    if sev in ("high", "critical"):
+                        score -= 20
+                        high_count += 1
+                    elif sev == "medium":
+                        score -= 10
+                        medium_count += 1
+                    elif sev == "low":
+                        score -= 5
+                        low_count += 1
+                    else:
+                        score -= 5
+
+                    serialized_findings.append(f_dict)
+
+                compliance_score = max(0, min(100, score))
+
+                summary = {
+                    "total_findings": len(serialized_findings),
+                    "high_severity_count": high_count,
+                    "medium_severity_count": medium_count,
+                    "low_severity_count": low_count,
+                    "is_compliant": len(serialized_findings) == 0
+                }
+
+                self.send_json_response({
+                    "status": "success",
+                    "compliance_score": compliance_score,
+                    "findings": serialized_findings,
+                    "summary": summary,
+                    "text": text,
+                    "channel": channel
+                })
+            except Exception as e:
+                self.send_json_response({"status": "error", "message": f"Hinglish inspection error: {str(e)}"}, status=500)
             return
 
         self.send_json_response({"status": "error", "message": "Endpoint not found"}, status=404)

@@ -287,73 +287,370 @@ class DeterministicReviewEngine:
     # ============================================================
     # IMPROVEMENT 3: Multilingual & Code-Mixed (Hinglish) Compliance
     # ============================================================
-    HINGLISH_PATTERNS = [
-        (
-            re.compile(r"\b(100% asar|chamatkari|jad se khatam|hamesha ke liye|shat[- ]pratishat|ek jhatke mein)\b", re.IGNORECASE),
-            "high",
-            "Vernacular absolute efficacy / magic cure claim detected in Hinglish copy. Prohibited under ASCI Code & Drugs and Magic Remedies Act.",
-            "ASCI Code Ch. 1 §4 (Vernacular Substantiation)",
-            "Replace with compliant phrasing, e.g. 'acne ko kam karne mein madad kare' or 'behtar results ke liye'."
-        ),
-        (
-            re.compile(r"\b(gora rang|rang gora|fairness guarantee|ek hafte mein gora|rang nikhare)\b", re.IGNORECASE),
-            "high",
-            "Skin-lightening / colorist fairness claim detected. Strictly banned under ASCI Skin Lightening & Cosmetic Guidelines 2024.",
-            "ASCI Guidelines on Skin Lightening Ads §2.1",
-            "Focus on skin hydration and natural glow, e.g. 'healthy glowing skin' or 'skin hydration support'."
-        ),
-        (
-            re.compile(r"\b(ramban ilaj|pakka ilaj|bilkul theek)\b", re.IGNORECASE),
-            "high",
-            "Unqualified traditional medical guarantee claim detected without statutory AYUSH clinical registry backing.",
-            "AYUSH / ASCI Guidelines §3.1",
-            "State explicit formulation properties, e.g. 'dermatologist tested botanical ingredients'."
-        )
+    HINGLISH_SUPERLATIVE_RULES = [
+        {
+            "pattern": re.compile(r"\b(100%\s*asar(?:daar)?)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Vernacular Guidelines 2025 §2.4",
+            "explanation": "Vernacular absolute efficacy / magic cure claim detected in Hinglish copy. Prohibited under ASCI Code & Drugs and Magic Remedies Act.",
+            "suggested_fix": "visible results ke liye regular use karein"
+        },
+        {
+            "pattern": re.compile(r"\b(chamatkar(?:i|ik)?)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Vernacular Guidelines 2025 §2.4",
+            "explanation": "Chamatkari (miraculous/magic) cure claim detected. Magic remedy assertions are prohibited under the Drugs and Magic Remedies Act and ASCI Code.",
+            "suggested_fix": "dermatologist-tested ingredients se banaya gaya"
+        },
+        {
+            "pattern": re.compile(r"\b(jad{1,2}\s*se\s*khatam)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Code Ch. 1 §4",
+            "explanation": "Absolute eradication claim 'jad se khatam' detected without permissible cosmetic qualification.",
+            "suggested_fix": "acne ko kam karne mein madad kare"
+        },
+        {
+            "pattern": re.compile(r"\b(hamesha\s*ke\s*liye)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Code Ch. 1 §4 (Vernacular Substantiation)",
+            "explanation": "Permanent efficacy claim 'hamesha ke liye' detected. Cosmetic formulations cannot promise permanent cure.",
+            "suggested_fix": "regular skin routine ke saath lambe samay tak effective"
+        },
+        {
+            "pattern": re.compile(r"\b(shat[-\s]+pratishat)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Code Ch. 1 §4 (Vernacular Substantiation)",
+            "explanation": "Absolute 100% guarantee claim 'shat pratishat' detected in Hinglish copy.",
+            "suggested_fix": "clinically tested aur effective formula"
+        },
+        {
+            "pattern": re.compile(r"\b(ek\s*jhatke\s*me(?:in)?)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Code Ch. 1 §4",
+            "explanation": "Instantaneous outcome claim 'ek jhatke mein' detected without clinical protocol backing.",
+            "suggested_fix": "step-by-step regular skincare routine se"
+        },
+        {
+            "pattern": re.compile(r"\b(ra?amban\s*ila?aj)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-AYUSH-03",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "AYUSH Advertising Guidelines §3.1 (Traditional Medicine Claims)",
+            "explanation": "Infallible remedy assertion ('ramban ilaj') detected without verified AYUSH clinical registry registration.",
+            "suggested_fix": "ayurvedic aur clinically tested botanical formulation"
+        },
+        {
+            "pattern": re.compile(r"\b(pakka\s*ila?aj)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-AYUSH-03",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "AYUSH Advertising Guidelines §3.1 (Traditional Medicine Claims)",
+            "explanation": "Guaranteed medical cure assertion ('pakka ilaj') detected without statutory AYUSH validation.",
+            "suggested_fix": "dermatologist-tested formulation se skin ki dekhbhal"
+        },
+        {
+            "pattern": re.compile(r"\b(bilkul\s*th(?:ee|i)k)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-AYUSH-03",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "CDSCO Cosmetics Rules 2020 / AYUSH Guidelines §3.1",
+            "explanation": "Absolute cure guarantee 'bilkul theek' detected under CDSCO / AYUSH cosmetic guidelines.",
+            "suggested_fix": "skin appearance ko behtar banane mein sahayak"
+        }
     ]
 
-    def check_hinglish_and_regional_claims(self, text: str, channel: str | None = None) -> list[FindingCandidate]:
-        """Inspect Hindi and Hinglish (code-mixed Latin script) text for regulatory violations and missing disclosures."""
+    HINGLISH_COLORIST_RULES = [
+        {
+            "pattern": re.compile(r"\b(gor[ae]\s*rang)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Skin-lightening / colorist fairness claim 'gora rang' detected. Depicting skin tone alteration or promoting fairness is prohibited under ASCI guidelines.",
+            "suggested_fix": "healthy glowing skin aur hydration"
+        },
+        {
+            "pattern": re.compile(r"\b(rang\s*(?:ko\s*)?gora)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Skin-lightening fairness claim 'rang gora' detected. Melanin alteration or skin bleaching claims are prohibited.",
+            "suggested_fix": "natural skin glow aur even texture"
+        },
+        {
+            "pattern": re.compile(r"\b(fairness\s*guarantee)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Fairness guarantee claim detected. Advertising cannot promise complexion lightening or shade changes.",
+            "suggested_fix": "dermatologist-approved formula se skin radiance aur glow"
+        },
+        {
+            "pattern": re.compile(r"\b(ek\s*hafte\s*me(?:in)?\s*gora)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Time-bound skin-lightening claim 'ek hafte mein gora' detected. Prohibited under ASCI Cosmetic Guidelines.",
+            "suggested_fix": "14 dinon mein visible skin radiance"
+        },
+        {
+            "pattern": re.compile(r"\b(rang(?:at)?\s*nikhare?)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Complexion modification claim 'rang nikhare' detected under ASCI Skin Lightening Guidelines.",
+            "suggested_fix": "skin barrier ko hydrate aur healthy banaye"
+        },
+        {
+            "pattern": re.compile(r"\b(gorapan)\b", re.IGNORECASE),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Fairness promise 'gorapan' detected. Commercial communications must not equate social success or beauty to skin color.",
+            "suggested_fix": "natural skin moisture aur healthy radiance"
+        }
+    ]
+
+    PROMOTIONAL_TRIGGER_PATTERN = re.compile(
+        r"\b(discount|khareedo|aaj\s*hi\s*order|loot\s*lo|code\s*lagao|link\s*bio\s*me(?:in)?|buy\s*now|use\s*code|order\s*kare(?:in)?)\b",
+        re.IGNORECASE
+    )
+
+    VERNACULAR_DISCLOSURE_PATTERN = re.compile(
+        r"(#vigyapan|#prayasit|#sahyog|#ad|#sponsored)\b",
+        re.IGNORECASE
+    )
+
+    HINGLISH_CLINICAL_PCT_PATTERN = re.compile(
+        r"(\d+(?:\.\d+)?)\s*(?:%|percent\b)(?:\s*(?:asar|prabhav|result|results|efficacy|hydration|reduction))?",
+        re.IGNORECASE
+    )
+
+    HINGLISH_TIMELINE_PATTERN = re.compile(
+        r"\b(?:sirf\s*)?(\d+)\s*(?:din|days?)\s*(?:me(?:in)?)?\s*(?:acne|khatam|theek|thik|cure|relief|ilaj|hydration|wrinkle|dark\s*spot|glow|fayda|behtar)\b",
+        re.IGNORECASE
+    )
+
+    def check_hinglish_and_regional_claims(
+        self,
+        text: str,
+        channel: str | None = None,
+        clinical_studies: list[dict[str, Any]] | dict[str, Any] | None = None
+    ) -> list[FindingCandidate]:
+        """Inspect Hindi and Hinglish (code-mixed Latin script) text for regulatory violations, missing disclosures, and clinical discrepancies."""
         findings: list[FindingCandidate] = []
-        if not text:
+        if not text or not text.strip():
             return findings
 
-        # Check Hinglish superlative and claim patterns
-        for regex, severity, explanation, source_ref, fix in self.HINGLISH_PATTERNS:
-            for match in regex.finditer(text):
+        # 1. Check Hinglish superlative and absolute cure patterns
+        for rule in self.HINGLISH_SUPERLATIVE_RULES:
+            for match in rule["pattern"].finditer(text):
                 start, end = match.span()
                 matched_str = match.group(0)
                 findings.append(
                     FindingCandidate(
-                        category="hinglish_claim",
-                        severity=severity,
+                        category=rule["category"],
+                        severity=rule["severity"],
                         span_start=start,
                         span_end=end,
                         highlighted_text=matched_str,
-                        explanation=explanation,
-                        source_ref=source_ref,
+                        explanation=rule["explanation"],
+                        source_ref=rule["source_ref"],
                         confidence=0.96,
-                        suggested_fix=fix
+                        suggested_fix=rule["suggested_fix"],
+                        rule_id=rule["rule_id"]
                     )
                 )
 
-        # Check for missing vernacular disclosures if promotional
-        is_promo = bool(re.search(r"\b(discount|khareedo|buy now|link bio mein|use code|aaj hi order|loot lo|code lagao)\b", text, re.IGNORECASE))
-        has_vernacular_disclosure = bool(re.search(r"\b(#vigyapan|#prayasit|#sahyog|#ad|#sponsored)\b", text, re.IGNORECASE))
+        # 2. Check skin-lightening and colorist claims
+        for rule in self.HINGLISH_COLORIST_RULES:
+            for match in rule["pattern"].finditer(text):
+                start, end = match.span()
+                matched_str = match.group(0)
+                findings.append(
+                    FindingCandidate(
+                        category=rule["category"],
+                        severity=rule["severity"],
+                        span_start=start,
+                        span_end=end,
+                        highlighted_text=matched_str,
+                        explanation=rule["explanation"],
+                        source_ref=rule["source_ref"],
+                        confidence=0.96,
+                        suggested_fix=rule["suggested_fix"],
+                        rule_id=rule["rule_id"]
+                    )
+                )
+
+        # 3. Check for missing vernacular disclosures if promotional copy detected
+        is_promo = bool(self.PROMOTIONAL_TRIGGER_PATTERN.search(text))
+        has_vernacular_disclosure = bool(self.VERNACULAR_DISCLOSURE_PATTERN.search(text))
 
         if is_promo and not has_vernacular_disclosure:
+            highlight_len = min(len(text), 30)
+            highlight_text = text[:highlight_len] + ("..." if len(text) > 30 else "")
             findings.append(
                 FindingCandidate(
                     category="disclaimer",
                     severity="high",
                     span_start=0,
-                    span_end=min(len(text), 30),
-                    highlighted_text=text[:30] + "...",
-                    explanation="Vernacular / Hinglish promotional copy lacks mandatory commercial disclosure tag (#vigyapan or #ad).",
+                    span_end=highlight_len,
+                    highlighted_text=highlight_text,
+                    explanation="Vernacular / Hinglish promotional copy lacks mandatory commercial disclosure tag (#vigyapan, #prayasit, #sahyog, #ad, or #sponsored).",
                     source_ref="ASCI Vernacular Advertising Guidelines 2025 §2.4",
                     confidence=0.92,
-                    suggested_fix="Add '#vigyapan' or '#ad' at the beginning of your caption."
+                    suggested_fix="'#vigyapan' ya '#ad' caption ke shuru mein jodein",
+                    rule_id="HINGLISH-DISCLOSURE-04"
                 )
             )
+
+        # 4. Cross-lingual clinical claim verification against registered study (CS-2026-88: 94.2% hydration, 14 days)
+        active_studies = []
+        if clinical_studies is None:
+            try:
+                from app.core.clinical_extractor import DEFAULT_CLINICAL_STUDIES
+                active_studies = list(DEFAULT_CLINICAL_STUDIES)
+            except Exception:
+                try:
+                    from .clinical_extractor import DEFAULT_CLINICAL_STUDIES
+                    active_studies = list(DEFAULT_CLINICAL_STUDIES)
+                except Exception:
+                    active_studies = []
+        elif isinstance(clinical_studies, dict):
+            active_studies = [clinical_studies]
+        elif isinstance(clinical_studies, list):
+            active_studies = list(clinical_studies)
+
+        study_id = "CS-2026-88"
+        target_hydration = 94.2
+        target_days = 14
+        citation = "Clinical Study CS-2026-88, Page 7, Table 2.1"
+
+        if active_studies:
+            primary_study = active_studies[0]
+            study_id = primary_study.get("study_id") or "CS-2026-88"
+            citation = primary_study.get("source_citation") or f"Clinical Study {study_id}, Page 7, Table 2.1"
+            if primary_study.get("duration_days"):
+                try:
+                    target_days = int(primary_study["duration_days"])
+                except Exception:
+                    pass
+            eps = primary_study.get("endpoints") or {}
+            hyd = eps.get("hydration_increase_percent")
+            if hyd is not None:
+                if isinstance(hyd, dict) and "value" in hyd:
+                    target_hydration = float(hyd["value"])
+                else:
+                    target_hydration = float(hyd)
+
+            # Scan for quantitative percentage claims in Hinglish copy
+            for match in self.HINGLISH_CLINICAL_PCT_PATTERN.finditer(text):
+                pct_val = float(match.group(1))
+                start, end = match.span()
+                matched_str = match.group(0)
+
+                # Ignore commercial discount percentages (e.g., "50% discount", "20% off")
+                surrounding = text[max(0, start - 20):min(len(text), end + 25)].lower()
+                if re.search(r"\b(discount|off|cashback|sale|chhoot|code)\b", surrounding):
+                    continue
+
+                # Statistical Exaggeration: claimed percentage exceeds trial endpoint
+                if pct_val > target_hydration:
+                    delta = round(pct_val - target_hydration, 1)
+                    pct_label = int(pct_val) if pct_val.is_integer() else pct_val
+                    explanation_text = (
+                        f"Hinglish copy claims {pct_label}% asar, but registered clinical trial {study_id} "
+                        f"observed {target_hydration}% hydration (Statistical Exaggeration Delta: +{delta}%). "
+                        f"Absolute efficacy claims prohibited under ASCI Code & Drugs and Magic Remedies Act."
+                    )
+                    fix_text = f"Claim ko 'Clinical trial mein {target_hydration}% hydration asar' se badlein ({study_id})"
+
+                    # Check if an existing finding already covers this span (e.g. '100% asar')
+                    existing_match = None
+                    for existing_f in findings:
+                        if existing_f.span_start is not None and existing_f.span_end is not None:
+                            if max(start, existing_f.span_start) < min(end, existing_f.span_end):
+                                existing_match = existing_f
+                                break
+
+                    if existing_match:
+                        # Enrich existing finding in place to avoid duplicate card while carrying clinical verification data
+                        existing_match.rule_id = "HINGLISH-CLINICAL-EXAGGERATION-05"
+                        existing_match.explanation = explanation_text
+                        existing_match.source_ref = f"Drugs and Magic Remedies Act 1954 §3 / {citation}"
+                        existing_match.confidence = 0.98
+                        existing_match.suggested_fix = fix_text
+                    else:
+                        findings.append(
+                            FindingCandidate(
+                                category="claim",
+                                severity="high",
+                                span_start=start,
+                                span_end=end,
+                                highlighted_text=matched_str,
+                                explanation=explanation_text,
+                                source_ref=citation,
+                                confidence=0.98,
+                                suggested_fix=fix_text,
+                                rule_id="HINGLISH-CLINICAL-EXAGGERATION-05"
+                            )
+                        )
+                # Borderline Efficacy Claim: rounding without decimal precision (within 1.0% threshold)
+                elif abs(pct_val - target_hydration) <= 1.0 and pct_val != target_hydration:
+                    pct_label = int(pct_val) if pct_val.is_integer() else pct_val
+                    findings.append(
+                        FindingCandidate(
+                            category="claim",
+                            severity="medium",
+                            span_start=start,
+                            span_end=end,
+                            highlighted_text=matched_str,
+                            explanation=f"Hinglish copy claims '{pct_label}% asar', but registered clinical trial {study_id} observed {target_hydration}% hydration. Omitting decimal precision or qualifying language ('up to {target_hydration}%') is borderline under ASCI §3.2.",
+                            source_ref=citation,
+                            confidence=0.92,
+                            suggested_fix=f"Claim ko qualify karein: 'Up to {target_hydration}% asar clinical study ({study_id}) mein dekha gaya'",
+                            rule_id="HINGLISH-CLINICAL-BORDERLINE-06"
+                        )
+                    )
+
+            # Timeline compression check against registered protocol duration
+            for match in self.HINGLISH_TIMELINE_PATTERN.finditer(text):
+                claimed_days = int(match.group(1))
+                start, end = match.span()
+                matched_str = match.group(0)
+                if claimed_days < target_days:
+                    delta_days = target_days - claimed_days
+                    findings.append(
+                        FindingCandidate(
+                            category="claim",
+                            severity="high",
+                            span_start=start,
+                            span_end=end,
+                            highlighted_text=matched_str,
+                            explanation=f"Hinglish copy claims clinical results in {claimed_days} din, but registered clinical trial {study_id} protocol duration is {target_days} days (Timeline Compression Delta: -{delta_days} days).",
+                            source_ref=citation,
+                            confidence=0.95,
+                            suggested_fix=f"Timeline ko qualify karein: 'Clinical trial ({study_id}) ke anusaar {target_days} dinon mein visible results'",
+                            rule_id="HINGLISH-CLINICAL-TIMELINE-07"
+                        )
+                    )
 
         return findings
 
@@ -712,6 +1009,10 @@ class DeterministicReviewEngine:
         # 6. Clinical evidence checks
         if text and not (isinstance(clinical_studies, list) and len(clinical_studies) == 0):
             findings.extend(self.check_clinical_evidence(text, clinical_studies))
+
+        # 7. Hinglish and regional vernacular compliance checks
+        if text and (channel and "hinglish" in channel.lower()):
+            findings.extend(self.check_hinglish_and_regional_claims(text, channel, clinical_studies))
 
         return findings
 
