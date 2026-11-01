@@ -705,6 +705,53 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 self.send_json_response({"status": "error", "message": "Sample PDF fixture Study_CS-2026-88.pdf not found"}, status=404)
                 return
 
+        # Sample Brand Design Waiver Download
+        if clean_path == "/api/clinical/sample-waiver":
+            waiver_candidates = [
+                os.path.join(WORKSPACE_ROOT, "codex", "fixtures", "Brand_Design_Waiver_BW-2026-09.pdf"),
+                os.path.join(BASE_DIR, "codex", "fixtures", "Brand_Design_Waiver_BW-2026-09.pdf"),
+                os.path.join(BASE_DIR, "fixtures", "Brand_Design_Waiver_BW-2026-09.pdf"),
+                os.path.join(BASE_DIR, "samples", "Brand_Design_Waiver_BW-2026-09.pdf"),
+            ]
+            found_waiver = None
+            for p in waiver_candidates:
+                if os.path.exists(p):
+                    found_waiver = p
+                    break
+
+            if found_waiver and os.path.exists(found_waiver):
+                try:
+                    with open(found_waiver, "rb") as f:
+                        waiver_data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Disposition", 'attachment; filename="Brand_Design_Waiver_BW-2026-09.pdf"')
+                    self.send_header("Content-Length", str(len(waiver_data)))
+                    self.end_headers()
+                    self.wfile.write(waiver_data)
+                    return
+                except Exception as e:
+                    self.send_json_response({"status": "error", "message": f"Failed reading waiver PDF: {e}"}, status=500)
+                    return
+            else:
+                self.send_json_response({"status": "error", "message": "Sample waiver fixture Brand_Design_Waiver_BW-2026-09.pdf not found"}, status=404)
+                return
+
+        # System Health Check Endpoint
+        if clean_path == "/api/health":
+            self.send_json_response({
+                "status": "healthy",
+                "engine": "Brandwise Governance Engine v3.0",
+                "active_improvements": [
+                    "Improvement 1: Automated Clinical Evidence PDF Ingestion",
+                    "Improvement 2: Interactive Evidence-Based Adjudication & Visual Compliance",
+                    "Improvement 3: Multilingual & Code-Mixed (Hinglish) Compliance"
+                ],
+                "uptime": "active",
+                "mode": "enterprise_local"
+            })
+            return
+
         return super().do_GET()
 
     def do_POST(self):
