@@ -19,8 +19,35 @@
 |---|---|---|
 | 🚀 **Live Web Application** | **[Launch Brandwise on GitHub Pages](https://pradeepverma884027-cell.github.io/Brandwise-/)** | Full production SPA deployed on GitHub Pages with dark/light mode. |
 | 🛡️ **Public Verification Portal** | **[Open Certificate Verification](https://pradeepverma884027-cell.github.io/Brandwise-/verify.html)** | Standalone registry portal for authenticating issued compliance certificates. |
+| ☁️ **Render Cloud Deployment** | **[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pradeepverma884027-cell/Brandwise-)** | 1-Click live full-stack web service deployed on Render cloud. |
 | 📄 **Final 18-Page PRD Dossier** | **[`Brandwise_Final_Submission_PRD.pdf`](../Brandwise_Final_Submission_PRD.pdf)** | Complete executive PRD addressing all 7 hackathon criteria. |
 | 📦 **GitHub Repository** | **[github.com/pradeepverma884027-cell/Brandwise-](https://github.com/pradeepverma884027-cell/Brandwise-)** | Clean, public source code repository. |
+
+---
+
+### 🚀 Deploy to Render (1-Click Live Cloud Backend)
+
+Deploy your own live, full-stack instance of Brandwise to Render in under 2 minutes:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pradeepverma884027-cell/Brandwise-)
+
+#### Step-by-Step Render Deployment Instructions:
+1. **One-Click Blueprint**: Click the **Deploy to Render** button above, or navigate to [Render Blueprints](https://dashboard.render.com/blueprints) and connect `https://github.com/pradeepverma884027-cell/Brandwise-`.
+2. **Automatic Configuration**: Render automatically reads `render.yaml`:
+   - **Service Name**: `brandwise`
+   - **Environment**: `python` (Python 3.12)
+   - **Plan**: `free`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python server.py 10000`
+   - **Health Check Path**: `/api/health`
+3. **Environment Variables**:
+   - `PORT`: Automatically assigned by Render (defaults to `10000`).
+   - `PYTHON_VERSION`: `3.12.10`
+   - *(Optional)* `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`: If using external LLM synthesis.
+4. **Live URL**: Once deployed, Render provisions a live HTTPS URL (e.g., `https://brandwise.onrender.com`):
+   - Dashboard: `https://<your-subdomain>.onrender.com/`
+   - Public Verification: `https://<your-subdomain>.onrender.com/verify.html`
+   - Health Probe: `https://<your-subdomain>.onrender.com/api/health`
 
 ---
 

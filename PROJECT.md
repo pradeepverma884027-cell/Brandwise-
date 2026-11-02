@@ -33,6 +33,17 @@ This project implements Improvement 2 consisting of:
    - `test_visual_compliance.py`: boundary tests for geometry (>2.0%), palette drift (15-65), contrast (<4.5:1), alt-text, API contracts.
    - `test_adjudication.py`: valid vs invalid counter-evidence, score restoration, audit log persistence, API contracts.
    - Runs cleanly via Python standard library `unittest` runner.
+6. **Render Cloud Deployment & Production Resilience** (`render.yaml`, `Dockerfile`, `Procfile`, `requirements.txt`, `server.py`):
+   - **Render Blueprint (`render.yaml`)**: Declares web service `brandwise`, Python 3.12 environment, free tier plan, buildCommand `pip install -r requirements.txt`, startCommand `python server.py 10000`, and health check `/api/health`.
+   - **Containerization (`Dockerfile`)**: Standard Python 3.12 slim container with dependency caching, port 10000 exposure, and automated health checks.
+   - **Process Configuration (`Procfile`)**: Process specification `web: python server.py $PORT` for dynamic platform port binding.
+   - **Lean Dependencies (`requirements.txt`)**: Fast-installing dependency manifest (`pypdf>=5.0.0`, `requests>=2.31.0`) ensuring rapid cloud builds without bloat.
+   - **Unified Server Resilience (`server.py` & `codex/server.py`)**:
+     - Dynamic port evaluation: `PORT = int(os.environ.get("PORT", sys.argv[1] if len(sys.argv) > 1 else 8000))`
+     - Socket binding: `0.0.0.0`
+     - Cloud probe support: `do_HEAD` handler responding immediately with HTTP 200 on `/api/health` and `/`
+     - Cryptographic parity: 100% SHA-256 byte-for-byte identity between `server.py` and `codex/server.py`.
+   - **Live Cloud Documentation**: Step-by-step instructions and 1-click "Deploy to Render" button in `README.md` and `codex/README.md`.
 
 ---
 
@@ -55,6 +66,13 @@ This project implements Improvement 2 consisting of:
 | F14 | Visual Compliance Test Suite | Unit & API tests in codex/tests/test_visual_compliance.py | M4 | ORIGINAL_REQUEST R5 |
 | F15 | Adjudication Test Suite | Unit & API tests in codex/tests/test_adjudication.py | M4 | ORIGINAL_REQUEST R5 |
 | F16 | Full Verification & Git Deployment | Verify all tests pass, SHA256 mirror parity, commit and push to main | M4 | ORIGINAL_REQUEST R6 |
+| F17 | Render Blueprint (render.yaml) | Web service specification for 1-click Render deployment | M5 | ORIGINAL_REQUEST Issue 4 |
+| F18 | Containerization (Dockerfile) | Production Dockerfile for Render or container hosts | M5 | ORIGINAL_REQUEST Issue 4 |
+| F19 | Process File (Procfile) | Procfile specifying web: python server.py $PORT | M5 | ORIGINAL_REQUEST Issue 4 |
+| F20 | Lean Root requirements.txt | Fast-installing dependencies (pypdf, requests) for Render free tier | M5 | ORIGINAL_REQUEST Issue 4 |
+| F21 | Server Port & HEAD Endpoint | Support PORT env/arg, 0.0.0.0 binding, and HTTP HEAD on /api/health | M5 | ORIGINAL_REQUEST Issue 4 |
+| F22 | Server Mirror Parity | Maintain 100% SHA-256 parity between server.py and codex/server.py | M5 | ORIGINAL_REQUEST Issue 4 |
+| F23 | Render Deployment Docs | Step-by-step deploy instructions & 1-click button in README.md | M5 | ORIGINAL_REQUEST Issue 4 |
 
 ---
 
@@ -65,6 +83,7 @@ This project implements Improvement 2 consisting of:
 | M2 | `backend_api` | REST Endpoints (`/api/visual/inspect`, `/api/adjudication/submit`), Audit Logging & Server Parity (`server.py`, `codex/server.py`) | M1 | DONE |
 | M3 | `frontend_spa` | Frontend Visual Inspector Tab, Preloaded Presets, Adjudication Modal & Tri-HTML Parity (`codex/frontend/index.html`, `index.html`, `docs/index.html`) | M2 | DONE |
 | M4 | `testing_verification` | Comprehensive Test Suites (`test_visual_compliance.py`, `test_adjudication.py`), Parity Verification & Git Deploy | M1, M2, M3 | DONE |
+| M5 | `render_backend_deploy` | Issue 4: render.yaml, Dockerfile, Procfile, requirements.txt, server.py HEAD/port binding, server parity & README docs | M1, M2, M3, M4 | DONE |
 
 ---
 
@@ -165,8 +184,13 @@ Response 200:
 ---
 
 ## Code Layout
-- `codex/backend/app/core/review_engine.py` (Source of truth for visual inspection & adjudication engine)
+- `render.yaml` (Render Blueprint specification for web service deployment)
+- `Dockerfile` (Production container configuration)
+- `Procfile` (Procfile web process runner)
+- `requirements.txt` (Root Python dependencies)
 - `server.py` & `codex/server.py` (Production standalone HTTP server; MUST maintain 100% SHA256 mirror parity)
 - `codex/frontend/index.html`, `index.html`, `docs/index.html` (React 18 SPA; MUST maintain 100% byte-for-byte tri-file parity)
-- `codex/tests/test_visual_compliance.py` (Visual compliance test suite)
-- `codex/tests/test_adjudication.py` (Counter-evidence adjudication test suite)
+- `codex/frontend/verify.html`, `verify.html`, `docs/verify.html` (Public verification portal; MUST maintain 100% byte-for-byte tri-file parity)
+- `README.md` & `codex/README.md` (Project and deployment documentation)
+- `codex/backend/app/core/review_engine.py` (Source of truth for visual inspection & adjudication engine)
+- `codex/tests/` (Automated test suites)

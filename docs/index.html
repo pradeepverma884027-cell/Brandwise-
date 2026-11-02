@@ -1450,9 +1450,10 @@
                     onLoginSuccess({
                       name: info.name,
                       email: info.email,
-                      role: info.title,
+                      role: info.role,
                       role_key: 'creator',
-                      tenant: 'DermaCare Global Healthcare'
+                      tenant: 'DermaCare Global Healthcare',
+                      initials: info.initials
                     });
                   }}
                   className="px-2.5 py-2 rounded-lg border text-left font-medium hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition cursor-pointer flex flex-col justify-between space-y-1"
@@ -1467,9 +1468,10 @@
                     onLoginSuccess({
                       name: info.name,
                       email: info.email,
-                      role: info.title,
+                      role: info.role,
                       role_key: 'chief',
-                      tenant: 'DermaCare Global Healthcare'
+                      tenant: 'DermaCare Global Healthcare',
+                      initials: info.initials
                     });
                   }}
                   className="px-2.5 py-2 rounded-lg border text-left font-medium hover:border-sky-500 hover:bg-sky-50/50 dark:hover:bg-sky-950/20 transition cursor-pointer flex flex-col justify-between space-y-1"
@@ -1484,9 +1486,10 @@
                     onLoginSuccess({
                       name: info.name,
                       email: info.email,
-                      role: info.title,
+                      role: info.role,
                       role_key: 'admin',
-                      tenant: 'DermaCare Global Healthcare'
+                      tenant: 'DermaCare Global Healthcare',
+                      initials: info.initials
                     });
                   }}
                   className="px-2.5 py-2 rounded-lg border text-left font-medium hover:border-purple-500 hover:bg-purple-50/50 dark:hover:bg-purple-950/20 transition cursor-pointer flex flex-col justify-between space-y-1"
@@ -1564,6 +1567,7 @@
       const [showCertificate, setShowCertificate] = useState(false);
       const [notification, setNotification] = useState(null);
       const [certificateDownloaded, setCertificateDownloaded] = useState(false);
+      const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
       // Improvement 2: Visual Asset Compliance & Adjudication State
       const [visualAssetForm, setVisualAssetForm] = useState({
@@ -1628,28 +1632,25 @@
         const s = loadWorkspaceState();
         return (s && Array.isArray(s.auditLogs) && s.auditLogs.length > 0) ? s.auditLogs : INITIAL_AUDIT_LOGS;
       });
-      // Compute the initial verification URL directly from the active Wi-Fi LAN IP
-      // so it is immediately scannable by mobile phones on the same network!
-      const getInitialVerifyUrl = () => {
-        if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-          const basePath = (window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1)) || '/';
-          if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            return `${window.location.origin}${basePath}verify.html`;
-          }
-          const port = window.location.port || '8000';
-          return `http://192.168.0.167:${port}/verify.html`;
+      // Compute dynamic verification URL using public window.location origin and path
+      const getDynamicVerifyUrl = (certId = 'BW-CERT-88419-2026') => {
+        if (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('null')) {
+          const basePath = window.location.pathname.replace(/index\.html$/, '').replace(/\/?$/, '/');
+          return `${window.location.origin}${basePath}verify.html?cert=${encodeURIComponent(certId)}`;
         }
-        return "http://192.168.0.167:8000/verify.html";
+        return `http://localhost:8000/verify.html?cert=${encodeURIComponent(certId)}`;
       };
 
-      const [customVerifyUrl, setCustomVerifyUrl] = useState(getInitialVerifyUrl);
-      const [lanVerifyUrl, setLanVerifyUrl] = useState("http://192.168.0.167:8000/verify.html");
-      const [allLanIps, setAllLanIps] = useState(["192.168.0.167"]);
-      const [verifyTargetMode, setVerifyTargetMode] = useState('lan'); // Default to Mobile Wi-Fi!
+      const isRemoteDeploy = typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+      const [customVerifyUrl, setCustomVerifyUrl] = useState(() => getDynamicVerifyUrl('BW-CERT-88419-2026'));
+      const [lanVerifyUrl, setLanVerifyUrl] = useState("");
+      const [allLanIps, setAllLanIps] = useState([]);
+      const [verifyTargetMode, setVerifyTargetMode] = useState(isRemoteDeploy ? 'cloud' : 'lan');
       const modalQrRef = useRef(null);
 
-      // Fetch dynamic LAN IP on mount and whenever certificate modal opens
+      // Fetch dynamic LAN IP on mount and whenever certificate modal opens (only when local)
       useEffect(() => {
+        if (isRemoteDeploy) return; // Never overwrite public URL with LAN on Render or GitHub Pages
         fetch('/api/local-ip')
           .then(res => res.json())
           .then(data => {
@@ -1661,23 +1662,26 @@
                 setAllLanIps(data.all_ips);
               }
               if (verifyTargetMode === 'lan' && data.lan_url) {
-                setCustomVerifyUrl(data.lan_url);
+                const sep = data.lan_url.includes('?') ? '&' : '?';
+                setCustomVerifyUrl(data.lan_url.includes('cert=') ? data.lan_url : `${data.lan_url}${sep}cert=BW-CERT-88419-2026`);
               } else if (verifyTargetMode === 'local' && data.localhost_url) {
-                setCustomVerifyUrl(data.localhost_url);
+                const sep = data.localhost_url.includes('?') ? '&' : '?';
+                setCustomVerifyUrl(data.localhost_url.includes('cert=') ? data.localhost_url : `${data.localhost_url}${sep}cert=BW-CERT-88419-2026`);
               }
             }
           })
           .catch(err => {
             console.warn("Could not query /api/local-ip:", err);
           });
-      }, [showCertificate, verifyTargetMode]);
+      }, [showCertificate, verifyTargetMode, isRemoteDeploy]);
 
       // Render live QR code inside modal on screen
       useEffect(() => {
         if (showCertificate && modalQrRef.current && typeof QRCode !== 'undefined') {
           modalQrRef.current.innerHTML = '';
+          const activeUrl = customVerifyUrl.trim() || getDynamicVerifyUrl('BW-CERT-88419-2026');
           new QRCode(modalQrRef.current, {
-            text: customVerifyUrl,
+            text: activeUrl,
             width: 140,
             height: 140,
             colorDark: "#0F172A",
@@ -3461,70 +3465,120 @@
 
       // jsPDF Certificate & Audit Report Generator (customized per submission or general)
       const generatePdfCertificate = (subItem) => {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        // Discard React click synthetic event
+        const sub = (subItem && subItem.certificate_id) ? subItem : null;
 
-        doc.setLineWidth(1.5);
-        doc.setDrawColor(16, 185, 129);
-        doc.rect(10, 10, 277, 190);
-        doc.setLineWidth(0.5);
-        doc.rect(13, 13, 271, 184);
-
-        // Top-Left Corner Logo Badge in PDF
-        doc.setFillColor(15, 23, 42);
-        doc.roundedRect(20, 18, 32, 16, 2, 2, 'F');
-        doc.setFont("Helvetica", "bold");
-        doc.setFontSize(12);
-        doc.setTextColor(16, 185, 129);
-        doc.text("BRANDWISE", 36, 26, { align: "center" });
-        doc.setFontSize(7);
-        doc.setTextColor(255, 255, 255);
-        doc.text("AI GOVERNANCE", 36, 31, { align: "center" });
-
-        const certId = (subItem && subItem.certificate_id) ? subItem.certificate_id : "BW-CERT-88419-2026";
-        const brandName = (subItem && subItem.brand_name) ? subItem.brand_name : "DermaCare Global Healthcare";
-        const targetChannelName = (subItem && (subItem.channel_name || subItem.channel)) ? (subItem.channel_name || subItem.channel) : selectedChannel;
-        const issueDate = (subItem && (subItem.reviewed_at || subItem.submitted_at)) ? (subItem.reviewed_at || subItem.submitted_at).substring(0, 10) : "2026-10-27";
-        const cryptoHash = (subItem && subItem.audit_hash) ? subItem.audit_hash.substring(0, 42) : "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1f";
-        const reviewerSigner = (subItem && subItem.reviewed_by) ? subItem.reviewed_by : "Dr. Aris Thorne, Chief Governance Officer";
-
-        // Verification QR URL with specific certificate ID
-        const basePath = (typeof window !== 'undefined' && window.location.pathname) ? (window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) || '/') : '/';
-        const fallbackUrl = (typeof window !== 'undefined' && window.location.origin) ? `${window.location.origin}${basePath}verify.html` : "http://localhost:8000/verify.html";
-        const baseVerify = customVerifyUrl.trim() || fallbackUrl;
-        const separator = baseVerify.includes('?') ? '&' : '?';
-        const verifyUrl = `${baseVerify}${separator}cert=${encodeURIComponent(certId)}`;
-
-        const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'absolute';
-        tempDiv.style.left = '-9999px';
-        document.body.appendChild(tempDiv);
-
-        if (typeof QRCode !== 'undefined') {
-          new QRCode(tempDiv, {
-            text: verifyUrl,
-            width: 128,
-            height: 128,
-            colorDark: "#0F172A",
-            colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.M
-          });
+        if (typeof isGeneratingPdf !== 'undefined' && isGeneratingPdf) {
+          if (typeof triggerNotification === 'function') {
+            triggerNotification("Certificate generation already in progress...");
+          }
+          return;
         }
 
-        setTimeout(() => {
-          try {
-            const canvas = tempDiv.querySelector('canvas') || tempDiv.querySelector('img');
-            if (canvas) {
-              const qrDataUrl = canvas.tagName.toLowerCase() === 'img' ? canvas.src : canvas.toDataURL('image/png');
-              doc.addImage(qrDataUrl, 'PNG', 246, 17, 22, 22);
-              doc.link(246, 17, 22, 22, { url: verifyUrl });
+        if (typeof setIsGeneratingPdf === 'function') {
+          setIsGeneratingPdf(true);
+        }
+        if (typeof triggerNotification === 'function') {
+          triggerNotification("Generating official cryptographic audit certificate...");
+        }
+
+        let tempDiv = null;
+
+        const performFallback = (reason) => {
+          console.warn("Falling back to printable certificate view:", reason);
+          if (typeof triggerNotification === 'function') {
+            triggerNotification("Opening official audit report in print/document view...");
+          }
+          if (typeof window !== 'undefined' && typeof window.print === 'function') {
+            try {
+              window.print();
+            } catch (printErr) {
+              console.warn("Print fallback also failed:", printErr);
             }
-          } catch (e) {
-            console.warn('QR image capture fallback:', e);
           }
-          if (document.body.contains(tempDiv)) {
-            document.body.removeChild(tempDiv);
+        };
+
+        try {
+          if (typeof window === 'undefined' || !window.jspdf || !window.jspdf.jsPDF) {
+            performFallback("jsPDF library unavailable");
+            if (typeof setIsGeneratingPdf === 'function') setIsGeneratingPdf(false);
+            return;
           }
+
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+          doc.setLineWidth(1.5);
+          doc.setDrawColor(16, 185, 129);
+          doc.rect(10, 10, 277, 190);
+          doc.setLineWidth(0.5);
+          doc.rect(13, 13, 271, 184);
+
+          // Top-Left Corner Logo Badge in PDF
+          doc.setFillColor(15, 23, 42);
+          doc.roundedRect(20, 18, 32, 16, 2, 2, 'F');
+          doc.setFont("Helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(16, 185, 129);
+          doc.text("BRANDWISE", 36, 26, { align: "center" });
+          doc.setFontSize(7);
+          doc.setTextColor(255, 255, 255);
+          doc.text("AI GOVERNANCE", 36, 31, { align: "center" });
+
+          const certId = (sub && sub.certificate_id) ? sub.certificate_id : "BW-CERT-88419-2026";
+          const brandName = (sub && sub.brand_name) ? sub.brand_name : "DermaCare Global Healthcare";
+          const targetChannelName = (sub && (sub.channel_name || sub.channel)) ? (sub.channel_name || sub.channel) : selectedChannel;
+          const issueDate = (sub && (sub.reviewed_at || sub.submitted_at)) ? (sub.reviewed_at || sub.submitted_at).substring(0, 10) : "2026-10-27";
+          const cryptoHash = (sub && sub.audit_hash) ? sub.audit_hash.substring(0, 42) : "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1f";
+          const reviewerSigner = (sub && sub.reviewed_by) ? sub.reviewed_by : "Dr. Aris Thorne, Chief Governance Officer";
+
+          // Public scannable QR URL with specific certificate ID
+          const publicBase = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('null'))
+            ? (window.location.origin + window.location.pathname.replace(/index\.html$/, '').replace(/\/?$/, '/') + 'verify.html')
+            : "http://localhost:8000/verify.html";
+          const isLiveDeploy = typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+          const baseVerify = (isLiveDeploy || !customVerifyUrl) ? publicBase : customVerifyUrl.trim();
+          const separator = baseVerify.includes('?') ? '&' : '?';
+          const verifyUrl = baseVerify.includes('cert=') ? baseVerify : `${baseVerify}${separator}cert=${encodeURIComponent(certId)}`;
+
+          tempDiv = document.createElement('div');
+          tempDiv.style.position = 'absolute';
+          tempDiv.style.left = '-9999px';
+          document.body.appendChild(tempDiv);
+
+          let qrRendered = false;
+          if (typeof QRCode !== 'undefined') {
+            try {
+              new QRCode(tempDiv, {
+                text: verifyUrl,
+                width: 128,
+                height: 128,
+                colorDark: "#0F172A",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+              });
+              qrRendered = true;
+            } catch (qrErr) {
+              console.warn("QR rendering exception:", qrErr);
+            }
+          }
+
+          setTimeout(() => {
+            try {
+              if (qrRendered && tempDiv) {
+                const canvas = tempDiv.querySelector('canvas') || tempDiv.querySelector('img');
+                if (canvas) {
+                  try {
+                    const qrDataUrl = canvas.tagName.toLowerCase() === 'img' ? canvas.src : canvas.toDataURL('image/png');
+                    if (qrDataUrl && qrDataUrl.length > 20) {
+                      doc.addImage(qrDataUrl, 'PNG', 246, 17, 22, 22);
+                      doc.link(246, 17, 22, 22, { url: verifyUrl });
+                    }
+                  } catch (e) {
+                    console.warn('QR image capture fallback:', e);
+                  }
+                }
+              }
 
           doc.setFont("Helvetica", "bold");
           doc.setFontSize(6);
@@ -3652,10 +3706,35 @@
 
           const filename = `${certId.replace(/[^a-zA-Z0-9-]/g, '_')}-Audit-Report.pdf`;
           doc.save(filename);
-          setCertificateDownloaded(true);
-          triggerNotification(`Official Audit Report (${filename}) released and downloaded!`);
-        }, 150);
-      };
+          if (typeof setCertificateDownloaded === 'function') {
+            setCertificateDownloaded(true);
+          }
+          if (typeof triggerNotification === 'function') {
+            triggerNotification(`Official Audit Report (${filename}) released and downloaded!`);
+          }
+        } catch (renderErr) {
+          console.error("PDF rendering error:", renderErr);
+          performFallback(renderErr.message);
+        } finally {
+          if (tempDiv && document.body.contains(tempDiv)) {
+            document.body.removeChild(tempDiv);
+          }
+          if (typeof setIsGeneratingPdf === 'function') {
+            setIsGeneratingPdf(false);
+          }
+        }
+      }, 150);
+    } catch (outerErr) {
+      console.error("Outer PDF error:", outerErr);
+      if (tempDiv && document.body.contains(tempDiv)) {
+        document.body.removeChild(tempDiv);
+      }
+      performFallback(outerErr.message);
+      if (typeof setIsGeneratingPdf === 'function') {
+        setIsGeneratingPdf(false);
+      }
+    }
+  };
 
       const generateCertificatePDF = generatePdfCertificate;
       const handleDownloadCertificate = () => generatePdfCertificate();
@@ -3665,10 +3744,18 @@
         window.handleDownloadCertificate = handleDownloadCertificate;
       }
 
-      const userDisplayName = currentUser ? currentUser.name : "Shivank Sharma";
-      const userRoleName = currentUser ? currentUser.role : "Administrator";
-      const userEmail = currentUser ? currentUser.email : "admin@dermacare.com";
-      const userInitials = currentUser ? currentUser.initials : "AD";
+      const userDisplayName = (currentUser && currentUser.name) ? currentUser.name : "Shivank Sharma";
+      const userRoleName = (currentUser && currentUser.role) ? currentUser.role : "Administrator";
+      const userEmail = (currentUser && currentUser.email) ? currentUser.email : "admin@dermacare.com";
+      const userInitials = (currentUser && currentUser.initials && currentUser.initials.trim())
+        ? currentUser.initials.trim().substring(0, 2).toUpperCase()
+        : (currentUser && currentUser.name && currentUser.name.trim())
+          ? currentUser.name.trim().split(/\s+/).map(n => n[0]).join('').substring(0, 2).toUpperCase()
+          : (currentUser && currentUser.role_key === 'creator')
+            ? 'SJ'
+            : (currentUser && currentUser.role_key === 'chief')
+              ? 'AT'
+              : 'AD';
 
       return (
         <div className={`min-h-screen ${bgStyle} flex flex-col font-sans transition-colors duration-200 relative`}>
@@ -3799,12 +3886,17 @@
               <div className="relative" ref={profileMenuRef}>
                 <button
                   onClick={() => setShowProfileMenu((prev) => !prev)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border transition cursor-pointer shadow-sm ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:border-slate-600' : 'bg-slate-100 border-slate-200 text-slate-700 hover:border-slate-300'
-                  }`}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all transform hover:scale-105 cursor-pointer shadow-md bg-gradient-to-tr from-emerald-600 via-teal-600 to-sky-600 text-white ring-2 ring-emerald-500/30 border border-white/20 select-none"
                   title="Profile & Settings"
+                  aria-label="User Profile"
                 >
-                  {userInitials}
+                  {userInitials ? (
+                    <span className="leading-none text-[11px] tracking-wider font-extrabold">{userInitials}</span>
+                  ) : (
+                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                  )}
                 </button>
 
                 {showProfileMenu && (
@@ -6646,7 +6738,7 @@
           {/* Certificate Modal */}
           {showCertificate && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${cardStyle} ${headerBorder}`}>
+              <div className={`rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border ${cardStyle} ${headerBorder} max-h-[90vh] overflow-y-auto relative z-50`}>
                 <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
                   <div className="flex items-center space-x-2">
                     <span className="text-lg">📜</span>
@@ -6692,12 +6784,29 @@
                       <span>📱 QR Scan Target:</span>
                     </span>
                     <div className="flex items-center space-x-1 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px]">
-                      {lanVerifyUrl && (
+                      {isRemoteDeploy && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVerifyTargetMode('cloud');
+                            setCustomVerifyUrl(getDynamicVerifyUrl('BW-CERT-88419-2026'));
+                          }}
+                          className={`px-2 py-0.5 rounded transition ${
+                            verifyTargetMode === 'cloud'
+                              ? 'bg-emerald-600 text-white font-semibold shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          ☁️ Cloud Public
+                        </button>
+                      )}
+                      {lanVerifyUrl && !isRemoteDeploy && (
                         <button
                           type="button"
                           onClick={() => {
                             setVerifyTargetMode('lan');
-                            setCustomVerifyUrl(lanVerifyUrl);
+                            const sep = lanVerifyUrl.includes('?') ? '&' : '?';
+                            setCustomVerifyUrl(lanVerifyUrl.includes('cert=') ? lanVerifyUrl : `${lanVerifyUrl}${sep}cert=BW-CERT-88419-2026`);
                           }}
                           className={`px-2 py-0.5 rounded transition ${
                             verifyTargetMode === 'lan'
@@ -6713,7 +6822,7 @@
                         onClick={() => {
                           setVerifyTargetMode('local');
                           const port = (typeof window !== 'undefined' && window.location.port) ? window.location.port : '8000';
-                          setCustomVerifyUrl(`http://localhost:${port}/verify.html`);
+                          setCustomVerifyUrl(`http://localhost:${port}/verify.html?cert=BW-CERT-88419-2026`);
                         }}
                         className={`px-2 py-0.5 rounded transition ${
                           verifyTargetMode === 'local'
@@ -6775,11 +6884,27 @@
                 {/* Direct PDF Download Action */}
                 <div className="space-y-3 pt-1">
                   <button
-                    onClick={generatePdfCertificate}
-                    className={`w-full py-2.5 rounded-lg font-semibold text-xs transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm ${accentBtn}`}
+                    type="button"
+                    onClick={() => generatePdfCertificate()}
+                    disabled={isGeneratingPdf}
+                    className={`w-full py-2.5 rounded-lg font-semibold text-xs transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm relative z-10 ${
+                      isGeneratingPdf ? 'opacity-70 cursor-not-allowed bg-emerald-700 text-white' : accentBtn
+                    }`}
                   >
-                    <span>📄</span>
-                    <span>Download Official Certificate (PDF)</span>
+                    {isGeneratingPdf ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Generating Official Certificate (PDF)...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📄</span>
+                        <span>Download Official Certificate (PDF)</span>
+                      </>
+                    )}
                   </button>
 
                   {certificateDownloaded && (

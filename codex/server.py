@@ -466,6 +466,28 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def do_HEAD(self):
+        clean_path = self.path.split('?')[0].split('#')[0].rstrip('/')
+        if clean_path.startswith('/codex'):
+            clean_path = clean_path[len('/codex'):]
+        if not clean_path:
+            clean_path = "/"
+
+        # System Health Check Endpoint for Render / Cloud Probes
+        if clean_path == "/api/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            return
+
+        if clean_path == "/api/local-ip" or clean_path.startswith("/api/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            return
+
+        return super().do_HEAD()
+
     def do_GET(self):
         clean_path = self.path.split('?')[0].split('#')[0].rstrip('/')
         if clean_path.startswith('/codex'):
@@ -1648,7 +1670,7 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         super().end_headers()
@@ -1689,7 +1711,8 @@ def run(port=8000):
             httpd.server_close()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", sys.argv[1] if len(sys.argv) > 1 else 8000))
+    PORT = int(os.environ.get("PORT", sys.argv[1] if len(sys.argv) > 1 else 8000))
+    port = PORT
     run(port)
 
 
