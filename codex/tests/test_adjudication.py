@@ -447,6 +447,56 @@ class TestCounterEvidenceAdjudication(unittest.TestCase):
         self.assertEqual(data.get("status"), "success")
         self.assertEqual(data.get("adjudication"), "ALLEGATION_REVERTED_AND_DISMISSED")
 
+    def test_adjudication_clinical_efficacy_policy_relevance_permissible(self):
+        """Clinical efficacy allegation accepted with clinical_trial_certificate."""
+        counter_ev = {
+            "evidence_type": "clinical_trial_certificate",
+            "reference_id": "CTRI-2026-CERT-01",
+            "justification": "Clinical trial certificate verifying 94.2% hydration protocol."
+        }
+        res = self.engine.adjudicate_counter_evidence("alg-clinical-002", "clinical_efficacy", counter_ev)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["adjudication"], "ALLEGATION_REVERTED_AND_DISMISSED")
+        self.assertEqual(res["restored_score_delta"], 15)
+
+    def test_adjudication_clinical_efficacy_policy_relevance_impermissible(self):
+        """Clinical efficacy allegation rejected when non-clinical waiver is provided."""
+        counter_ev = {
+            "evidence_type": "legal_waiver_signoff",
+            "reference_id": "WAIVER-CORP-99",
+            "justification": "Legal department has signed off on this claim waiver."
+        }
+        res = self.engine.adjudicate_counter_evidence("alg-clinical-001", "clinical_efficacy", counter_ev)
+        self.assertFalse(res["success"])
+        self.assertEqual(res["adjudication"], "REJECTED_POLICY_IRRELEVANT")
+        self.assertEqual(
+            res["message"],
+            "Submitted evidence type 'legal_waiver_signoff' is not relevant to allegation category 'clinical_efficacy'."
+        )
+
+    def test_api_adjudication_submit_policy_irrelevant_rejected(self):
+        """POST /api/adjudication/submit returns REJECTED_POLICY_IRRELEVANT for mismatched category."""
+        payload = {
+            "allegation_id": "alg-clinical-003",
+            "allegation_category": "clinical_efficacy",
+            "counter_evidence": {
+                "evidence_type": "influencer_contract_exemption",
+                "reference_id": "INF-AGREE-77",
+                "justification": "Creator agreement specifies disclaimer on profile bio."
+            }
+        }
+        status, headers, body = HTTPTestClient.post("/api/adjudication/submit", json_data=payload)
+        self.assertEqual(status, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertEqual(data.get("status"), "rejected")
+        self.assertEqual(data.get("adjudication"), "REJECTED_POLICY_IRRELEVANT")
+        result = data.get("result", {})
+        self.assertFalse(result.get("success"))
+        self.assertEqual(
+            result.get("message"),
+            "Submitted evidence type 'influencer_contract_exemption' is not relevant to allegation category 'clinical_efficacy'."
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

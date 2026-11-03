@@ -16,6 +16,8 @@ import os
 import sys
 import json
 import base64
+import shutil
+import tempfile
 import unittest
 from typing import Dict, Any, Tuple
 
@@ -106,10 +108,56 @@ class HTTPTestClient:
 class TestClinicalAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        super().setUpClass()
         # Locate sample PDF fixture
         cls.sample_pdf_path = os.path.join(CODEX_ROOT, "fixtures", "Study_CS-2026-88.pdf")
         if not os.path.exists(cls.sample_pdf_path):
             cls.sample_pdf_path = os.path.join(REPO_ROOT, "fixtures", "Study_CS-2026-88.pdf")
+
+        # Database test isolation: redirect server.SUBMISSIONS_DB_FILE to temporary file
+        cls._orig_submissions_db = getattr(server, "SUBMISSIONS_DB_FILE", None)
+        cls._orig_mock_submissions = list(server.SUPABASE_MOCK_TABLES.get("brand_submissions", []))
+
+        # Read pristine seed bytes from root brand_submissions_db.json
+        seed_path = os.path.join(REPO_ROOT, "brand_submissions_db.json")
+        if not os.path.exists(seed_path) and cls._orig_submissions_db:
+            seed_path = cls._orig_submissions_db
+
+        with open(seed_path, "rb") as f:
+            cls._seed_bytes = f.read()
+
+        # Create isolated temporary database file
+        cls._temp_dir = tempfile.TemporaryDirectory()
+        cls._temp_db_path = os.path.join(cls._temp_dir.name, "brand_submissions_db.json")
+        with open(cls._temp_db_path, "wb") as f:
+            f.write(cls._seed_bytes)
+
+        # Redirect server to temporary database and load into memory
+        server.SUBMISSIONS_DB_FILE = cls._temp_db_path
+        server.load_brand_submissions()
+
+    @classmethod
+    def tearDownClass(cls):
+        # Restore original SUBMISSIONS_DB_FILE and in-memory mock store
+        if hasattr(cls, "_orig_submissions_db") and cls._orig_submissions_db:
+            server.SUBMISSIONS_DB_FILE = cls._orig_submissions_db
+
+            # Defense-in-depth: ensure physical file matches clean seed
+            if hasattr(cls, "_seed_bytes") and os.path.exists(cls._orig_submissions_db):
+                with open(cls._orig_submissions_db, "wb") as f:
+                    f.write(cls._seed_bytes)
+
+            server.load_brand_submissions()
+        else:
+            server.SUPABASE_MOCK_TABLES["brand_submissions"] = getattr(cls, "_orig_mock_submissions", [])
+
+        # Clean up temporary directory
+        if hasattr(cls, "_temp_dir"):
+            try:
+                cls._temp_dir.cleanup()
+            except Exception:
+                pass
+        super().tearDownClass()
 
     # -------------------------------------------------------------------------
     # 1. GET /api/clinical/studies
