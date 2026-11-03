@@ -549,21 +549,26 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # Dynamic LAN IP detection endpoint so frontend QR code always matches current network and port
         if clean_path == "/api/local-ip":
+            render_external_url = os.environ.get("RENDER_EXTERNAL_URL", "https://brandwise-6wl6.onrender.com").rstrip("/")
             lan_ip = get_lan_ip()
             all_ips = get_all_lan_ips()
             port = self.server.server_port
             host_header = self.headers.get("Host", f"localhost:{port}")
             current_host = host_header.split(":")[0] if ":" in host_header else host_header
-            mobile_url = f"http://{lan_ip}:{port}/verify.html"
+            is_render = bool(os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL") or "onrender.com" in host_header)
+            cloud_url = f"{render_external_url}/verify.html"
+            mobile_url = cloud_url if is_render else f"http://{lan_ip}:{port}/verify.html"
             self.send_json_response({
                 "status": "success",
                 "ip": lan_ip,
                 "all_ips": all_ips,
                 "port": port,
                 "current_host": current_host,
+                "render_external_url": render_external_url,
+                "cloud_url": cloud_url,
                 "localhost_url": f"http://localhost:{port}/verify.html",
                 "lan_url": mobile_url,
-                "verify_url": mobile_url
+                "verify_url": cloud_url if is_render else mobile_url
             })
             return
 

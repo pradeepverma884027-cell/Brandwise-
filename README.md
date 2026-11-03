@@ -7,12 +7,21 @@
   <img src="https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/Compliance-DPDP%20Act%202025-blue?style=for-the-badge" alt="DPDP 2025">
   <img src="https://img.shields.io/badge/Standards-ASCI%202025--26%20Code-orange?style=for-the-badge" alt="ASCI">
-  <img src="https://img.shields.io/badge/Tests-406%20Passing%20(100%25)-success?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-428%20Passing%20(100%25)-success?style=for-the-badge" alt="Tests">
 </p>
 
 > **"A spell-checker for brand trust: it catches off-brand, unsupported, or non-compliant marketing claims before they go public, shows its working with statutory citations, and never overrides a human."**
 
 Brandwise is an AI-powered pre-publication brand-governance and advertising-compliance platform designed for consumer goods, cosmetics, and healthcare brands. Operating as an automated pre-flight review layer between drafting and distribution, Brandwise guarantees that marketing communications strictly adhere to statutory advertising regulations (**ASCI Code 2025–26**, **Drugs and Magic Remedies Act 1954**, **CDSCO Cosmetics Rules 2020**, **AYUSH Guidelines**, and the **India DPDP Act 2025**) as well as internal brand guidelines.
+
+---
+
+> [!IMPORTANT]
+> ### 🏆 Note for Hackathon Judges & Evaluators
+> - **Official Live Evaluation Link**: **[https://brandwise-6wl6.onrender.com](https://brandwise-6wl6.onrender.com)** (Use this primary link for judging and live evaluation).
+> - **Render Cold-Start Notice**: Free-tier cloud containers automatically sleep after 15 minutes of inactivity. When opening the app for the first time, Render may take **30 to 50 seconds** to wake up the backend. An animated status banner at the top of the interface displays `"Waking up cloud backend..."` and turns green (`"Cloud Backend Ready"`) once the instance is awake. Please open the link a few minutes early to ensure the container is warm.
+> - **Immediate Backend Verification**: Opening [`/api/submissions`](https://brandwise-6wl6.onrender.com/api/submissions) directly in a browser tab returns JSON with active submissions, proving that the Python backend daemon is healthy and responding. *(Security note: in this hackathon demo release, submission reading is unauthenticated for frictionless evaluation; enterprise deployments use OAuth2/RBAC as specified in `ROADMAP.md`).*
+> - **Mobile QR Verification**: When you approve a submission and download the official PDF Certificate, the embedded QR code automatically opens the public **Render domain** (`https://brandwise-6wl6.onrender.com/verify.html?cert=...`) via `RENDER_EXTERNAL_URL`. You can scan it with any smartphone camera over cellular data or Wi-Fi to immediately verify the cryptographic seal.
 
 ---
 
@@ -26,7 +35,7 @@ Brandwise is an AI-powered pre-publication brand-governance and advertising-comp
 | 🌐 **GitHub Pages Mirror** | **[https://pradeepverma884027-cell.github.io/Brandwise-/](https://pradeepverma884027-cell.github.io/Brandwise-/)** | Frontend SPA mirror with client-side offline deterministic engine simulation. |
 | 📦 **GitHub Repository** | **[github.com/pradeepverma884027-cell/Brandwise-](https://github.com/pradeepverma884027-cell/Brandwise-)** | Clean, public source code repository. |
 | 📄 **Final 18-Page PRD Dossier** | **[`Brandwise_Final_Submission_PRD.pdf`](Brandwise_Final_Submission_PRD.pdf)** | Complete executive PRD addressing all hackathon evaluation criteria. |
-| 🧪 **Comprehensive Testing Matrix** | **[`TESTING.md`](TESTING.md)** | Full test catalog: 406 Python tests + 144 Node assertions, zero database drift. |
+| 🧪 **Comprehensive Testing Matrix** | **[`TESTING.md`](TESTING.md)** | Full test catalog: 428 Python tests + 356 Node assertions, zero database drift. |
 | 🗺️ **Strategic Product Roadmap** | **[`ROADMAP.md`](ROADMAP.md)** | Strategic vision spanning v3.1 (OCR/multilingual) to v5.0 (enterprise SSO). |
 
 ---
@@ -40,7 +49,7 @@ Brandwise runs with **zero mandatory external cloud dependencies** — all three
 - **Cryptographic Verification Portal (`verify.html`)**: Standalone public verification interface displaying SHA-256 audit digests and approval proofs.
 - **Deterministic Governance Engine (`codex/backend/app/core/review_engine.py`)**: Regex boundary matching, phonetic n-grams, ASCI superlative filters, and WCAG 2.2 contrast analyzers.
 - **Clinical Evidence Extractor (`codex/backend/app/core/clinical_extractor.py`)**: Pure Python multi-page PDF parser (`pypdf`) extracting structured clinical endpoints, p-values, and statistical discrepancy deltas.
-- **Data Persistence**: Atomic file transactions (`write-tmp-rename` pattern) on lightweight JSON databases (`brand_submissions_db.json`, `supabase_users_db.json`) ensuring resilience against race conditions.
+- **Data Persistence**: Atomic file transactions (`write-tmp-rename` pattern) on lightweight JSON database (`brand_submissions_db.json`) ensuring resilience against race conditions and container restarts.
 
 ---
 
@@ -81,28 +90,30 @@ Brandwise is **offline-first**; no API keys are required to run the full applica
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `PORT` | Integer | `8000` (Local) / `10000` (Render) | HTTP port bound by `server.py`. |
+| `RENDER_EXTERNAL_URL` | String | `https://brandwise-6wl6.onrender.com` | Base public URL for mobile QR code verification links. |
 | `ANTHROPIC_API_KEY` | String | *Empty (None)* | *(Optional)* Claude 3.5 Sonnet key for cloud LLM semantic review synthesis. |
 | `OPENAI_API_KEY` | String | *Empty (None)* | *(Optional)* OpenAI key for semantic embeddings and evaluations. |
 | `PYTHON_VERSION` | String | `3.12.10` | Python runtime version specified in `render.yaml`. |
 
 ---
 
-## 🚶 The 5-Step Main User Journey
+## 🚶 The 5-Step Main User Journey (Judge's Test Runbook)
 
-Follow this step-by-step walkthrough to experience the complete compliance lifecycle:
+Follow this 5-minute walkthrough to experience the complete compliance lifecycle:
 
 ### Step 1: Health Check & System Readiness
-- **Action**: Visit `http://localhost:8000/api/health` or observe the top waking indicator banner.
+- **Action**: Visit [https://brandwise-6wl6.onrender.com/api/health](https://brandwise-6wl6.onrender.com/api/health) or observe the top waking status banner.
 - **Expected Output**: HTTP 200 JSON confirmation with `status: "healthy"`, engine `Brandwise Governance Engine v3.0`, and confirmation of all 3 active improvements.
 
-### Step 2: Submission Ingestion & Pre-Flight Review
-- **Action**: Open the dashboard at `http://localhost:8000/`. Select the **Content Review** tab, choose **Instagram Caption**, and input sample marketing copy:
+### Step 2: Submission Ingestion & Pre-Flight Review (Creator Role)
+- **Role**: Sign in as **Creator** (`creator@dermacare.com` / Sarah Jenkins) using the top profile switcher or quick-login.
+- **Action**: Open the dashboard, select the **Content Review** tab, choose **Instagram Caption**, and input sample marketing copy:
   > *"DermaCare SPF 50 gives 100% protection against all UV rays! Miracle cure for sun damage #skincare"*
 - **Expected Output**: The pre-flight score drops to ~52. Interactive Evidence Cards flag:
   - `§4.2 Regulated Claims`: Prohibited superlative *"100% protection"* (requires absolute clinical defense).
   - `Drugs & Magic Remedies Act §3`: Prohibited term *"Miracle cure"*.
   - `ASCI Influencer Code`: Missing commercial disclosure tag (`#ad` or `#vigyapan`).
-- Click **"Accept Fix"** on any card to apply an instant, inline tracked replacement without changing creative tone.
+- Click **"Accept Fix"** on any card to apply an instant, inline tracked replacement without changing creative tone, then click **"Submit for Governance Approval"**.
 
 ### Step 3: Clinical Evidence PDF Ingestion & Discrepancy Verification
 - **Action**: In the **Clinical Evidence** panel, upload `samples/Study_CS-2026-88.pdf` (or use the built-in study selector) and enter copy claiming:
@@ -114,14 +125,15 @@ Follow this step-by-step walkthrough to experience the complete compliance lifec
 
 ### Step 4: Interactive Counter-Evidence Adjudication
 - **Action**: On a flagged design or clinical allegation, click **"Submit Counter-Evidence"**. Upload an authorized waiver (`samples/Brand_Design_Waiver_BW-2026-09.pdf`) or lab assay certificate (`samples/LAB-AYUSH-904.pdf`), provide Reference ID `BW-WVR-2026-09`, and justification text (>= 10 characters).
-- **Expected Output**: The policy relevance engine validates document scope against the allegation category, issues status `"ALLEGATION_REVERTED_AND_DISMISSED"`, restores **+15 compliance score points**, and logs a SHA-256 document proof in the audit trail. Submitting an irrelevant document (e.g., design waiver for a clinical efficacy claim) is cleanly rejected with policy explanation.
+- **Expected Output**: The policy relevance engine validates document scope against the allegation category, issues status `"ALLEGATION_REVERTED_AND_DISMISSED"`, restores **+15 compliance score points**, and logs a SHA-256 document proof in the audit trail. Submitting an irrelevant document (e.g., design waiver for a clinical efficacy claim) is cleanly rejected with `REJECTED_POLICY_IRRELEVANT`.
 
-### Step 5: Administrative Approval & Public Cryptographic Verification
-- **Action**: Switch to the **Brand Approvals** tab. Sign in as Admin (`admin@dermacare.com` / password `1234`). Review the submission and click **"✓ Approve & Issue Certificate"**.
+### Step 5: Chief Governance Officer Approval & Mobile QR Verification
+- **Role**: Switch to **Chief Governance Officer** (`chief@dermacare.com` / Dr. Aris Thorne) or open in a second browser / mobile window.
+- **Action**: Switch to the **Brand Approvals** tab. Review the pending campaign submission from Step 2 and click **"✓ Approve & Issue Certificate"**.
 - **Expected Output**:
   - The submission is marked `APPROVED` and assigned a permanent certificate ID (e.g., `BW-CERT-45892-2026`).
-  - Click **"📄 Release Audit Report (PDF)"** to download an official compliance certificate generated client-side via `jsPDF`, complete with corporate branding, immutable SHA-256 hash, and vector QR code.
-  - Open `http://localhost:8000/verify.html?cert=BW-CERT-45892-2026` to verify cryptographic authenticity on the public registry.
+  - Click **"📄 Release Audit Report (PDF)"** to download the official compliance certificate generated client-side via `jsPDF`, complete with corporate branding, immutable SHA-256 hash, and vector QR code.
+  - **Scan the QR Code**: Point any smartphone camera at the on-screen QR code or the downloaded PDF. It directly opens **[https://brandwise-6wl6.onrender.com/verify.html?cert=BW-CERT-45892-2026](https://brandwise-6wl6.onrender.com/verify.html)** on Render, displaying a verified green badge: `"VALID & SEALED"`.
 
 ---
 
@@ -155,7 +167,7 @@ In compliance with hackathon transparency guidelines, the following limitations 
 
 ## 🧪 Running Automated Test Suites
 
-Brandwise includes a comprehensive test suite of 406 Python unit tests and 144 Node.js empirical checks:
+Brandwise includes a comprehensive test suite of 428 Python unit tests and 356 Node.js empirical checks:
 
 ```bash
 # 1. Run Milestone 3 Comprehensive Journey Suite (5-step flow + 11 boundary cases)
@@ -168,11 +180,13 @@ python -m unittest codex/tests/test_r3_hinglish_matrix.py
 python -m unittest codex/tests/test_challenger_r3_m2_security.py
 python -m unittest codex/tests/test_challenger_r3_m2_r2_adjudication_regex.py
 
-# 4. Run Full Python Test Suite Discovery (All 406 Tests)
+# 4. Run Full Python Test Suite Discovery (All 428 Tests)
 python -m unittest discover codex/tests
 
-# 5. Run Milestone 4 Offline GitHub Pages Simulator (144 Node.js assertions)
-node codex/tests/test_challenger_imp3_m4_docs_offline.js
+# 5. Run Node.js Adversarial Empirical Challenger Suites (356 Assertions)
+node codex/tests/test_challenger_issue3_pdf_adversarial.js
+node codex/tests/test_challenger_prod_m1_initials_url.js
+node codex/tests/test_challenger_prod_m2_render_deployment.js
 
 # 6. Verify Zero Database Drift (Physical JSON SHA-256 Invariance)
 powershell -Command "Get-FileHash -Algorithm SHA256 brand_submissions_db.json, codex\brand_submissions_db.json"
@@ -198,7 +212,8 @@ Brandwise is pre-configured for seamless zero-configuration deployment to Render
    - **Environment Variables**:
      - `PORT`: `10000` (HTTP port bound by `server.py`)
      - `PYTHON_VERSION`: `3.12.10`
-   - **Public Verification Registry**: Deployed at `https://<your-subdomain>.onrender.com/verify.html`
+     - `RENDER_EXTERNAL_URL`: `https://brandwise-6wl6.onrender.com`
+   - **Public Verification Registry**: Deployed at `https://brandwise-6wl6.onrender.com/verify.html`
 
 ### Local Docker Execution
 ```bash
@@ -234,5 +249,5 @@ docker run -p 10000:10000 -e PORT=10000 brandwise:latest
 
 <p align="center">
   <b>Brandwise • Enterprise Pre-Publication Brand Governance Platform</b><br>
-  Built with ❤️ for Hackathon Round 3 • October 2026
+  Built with ❤️ for Hackathon Round 3 • November 2026
 </p>

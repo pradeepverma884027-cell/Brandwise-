@@ -46,3 +46,7 @@ script_*
 # Runtime uploads
 uploads/
 codex/uploads/
+
+# User auth databases & credentials
+supabase_users_db.json
+codex/supabase_users_db.json

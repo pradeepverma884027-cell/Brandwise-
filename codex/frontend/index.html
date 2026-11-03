@@ -35,6 +35,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <script>
+    window.RENDER_EXTERNAL_URL = "https://brandwise-6wl6.onrender.com";
     tailwind.config = {
       darkMode: 'class',
       theme: {
@@ -3632,9 +3633,12 @@
           const reviewerSigner = (sub && sub.reviewed_by) ? sub.reviewed_by : "Dr. Aris Thorne, Chief Governance Officer";
 
           // Public scannable QR URL with specific certificate ID
+          const renderExternalUrl = (typeof window !== 'undefined' && window.RENDER_EXTERNAL_URL)
+            ? window.RENDER_EXTERNAL_URL.replace(/\/?$/, '')
+            : "https://brandwise-6wl6.onrender.com";
           const publicBase = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('null'))
             ? (window.location.origin + window.location.pathname.replace(/index\.html$/, '').replace(/\/?$/, '/') + 'verify.html')
-            : "http://localhost:8000/verify.html";
+            : (renderExternalUrl + "/verify.html");
           const isLiveDeploy = typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
           const baseVerify = (isLiveDeploy || !customVerifyUrl) ? publicBase : customVerifyUrl.trim();
           const separator = baseVerify.includes('?') ? '&' : '?';
@@ -6904,22 +6908,23 @@
                       <span>📱 QR Scan Target:</span>
                     </span>
                     <div className="flex items-center space-x-1 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[10px]">
-                      {isRemoteDeploy && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setVerifyTargetMode('cloud');
-                            setCustomVerifyUrl(getDynamicVerifyUrl('BW-CERT-88419-2026'));
-                          }}
-                          className={`px-2 py-0.5 rounded transition ${
-                            verifyTargetMode === 'cloud'
-                              ? 'bg-emerald-600 text-white font-semibold shadow-sm'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                          }`}
-                        >
-                          ☁️ Cloud Public
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerifyTargetMode('cloud');
+                          const cloudDomain = (typeof window !== 'undefined' && window.location && window.location.hostname.includes('onrender.com'))
+                            ? getDynamicVerifyUrl('BW-CERT-88419-2026')
+                            : 'https://brandwise-6wl6.onrender.com/verify.html?cert=BW-CERT-88419-2026';
+                          setCustomVerifyUrl(cloudDomain);
+                        }}
+                        className={`px-2 py-0.5 rounded transition ${
+                          verifyTargetMode === 'cloud'
+                            ? 'bg-emerald-600 text-white font-semibold shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        ☁️ Cloud Public (Render)
+                      </button>
                       {lanVerifyUrl && !isRemoteDeploy && (
                         <button
                           type="button"
