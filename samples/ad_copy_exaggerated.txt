@@ -1,0 +1,24 @@
+# ==============================================================================
+# Brandwise Sample Marketing Copy: EXAGGERATED & UNSUBSTANTIATED
+# File: samples/ad_copy_exaggerated.txt
+# Expected Result: Flags 4+ Discrepancies, Severe Score Deductions
+# ==============================================================================
+
+Transform your skin overnight with the World's #1 DermaCare Miracle Elixir! 
+
+Our breakthrough formulation is clinically proven to deliver an astonishing 99.8% stratum corneum hydration boost in just 3 days! Say goodbye to persistent acne forever—our formula completely eliminates 88% of inflammatory acne lesions and slashes facial sebum excretion by 75% in under 48 hours. 
+
+Guaranteed 95% permanent wrinkle eradication and complete skin barrier reconstruction with zero side effects. Doctor certified best formula on the market!
+
+Order now to unlock 100% flawless glass skin! Link in bio.
+
+# ==============================================================================
+# Discrepancies Triggered against Study CS-2026-88 (Page 7, Table 2.1):
+# 1. Hydration Exaggeration: Claims 99.8% vs Trial 94.2% (+5.6% exaggeration delta)
+# 2. Timeline Compression: Claims results in 3 days vs Trial 14 days (-11 days premature)
+# 3. Acne Reduction Exaggeration: Claims 88% vs Trial 68.0% (+20.0% exaggeration delta)
+# 4. Sebum Exaggeration & Compression: Claims 75% in 48h vs Trial 42.5% in 14 days (+32.5% delta)
+# 5. Unverified Endpoint: Claims 95% wrinkle eradication (No endpoint in Protocol CS-2026-88)
+# 6. Prohibited Superlatives & Guarantees: "World's #1", "Miracle", "100% flawless", "forever"
+# 7. Missing Statutory Disclosure: Promotional CTA lacking #ad, #sponsored, or #विज्ञापन
+# ==============================================================================

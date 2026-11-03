@@ -1,0 +1,82 @@
+# ==============================================================================
+# Brandwise Hinglish & Devanagari Compliance Test Matrix
+# File: samples/hinglish_test_lines.txt
+# Tested via: POST /api/hinglish/check & codex/tests/test_r3_hinglish_matrix.py
+# ==============================================================================
+
+# ==============================================================================
+# SECTION 1: FIVE VIOLATING HINGLISH LINES (Must Flag Violations & Deduct Score)
+# ==============================================================================
+
+# Line 1: Clinical Exaggeration & Instantaneous Outcome Claim
+# Flags: "100% asar" (superlative/exaggeration), "ek jhatke mein" (instantaneous outcome)
+Yeh cream lagao aur 100% asar paao ek jhatke mein bina kisi side effect ke.
+
+# Line 2: Magic Remedy & Root Eradication / Permanent Cure
+# Flags: "chamatkari" (magic remedy under DMRA 1954), "jad se" (root eradication), "hamesha ke liye" (permanent cure)
+Hamara chamatkari ayurvedic tel baalon ko jad se ugata hai hamesha ke liye.
+
+# Line 3: Colorist / Skin Lightening Claim & Unsubstantiated Guarantee
+# Flags: "gorapan" (colorist claim under ASCI 2025), "guarantee" (unverified guarantee), "bilkul gora" (complexion change)
+Instant gorapan guarantee! 7 dino mein chehre ka rang badal dega bilkul gora.
+
+# Line 4: Unsubstantiated Superlative & Market Ranking
+# Flags: "World's #1" / "#1" (unsubstantiated ranking without fact register), "best formula" (superlative)
+World's #1 skin cream, doctor certified best formula #collab.
+
+# Line 5: Missing Statutory Vernacular Disclosure on Commercial CTA
+# Flags: HINGLISH-DISCLOSURE-04 (Promotional commercial CTA lacking #विज्ञापन, #ad, or #vigyapan)
+50% off on all products! Aaj hi order karein link bio mein!
+
+
+# ==============================================================================
+# SECTION 2: FIVE HARMLESS / COMPLIANT LINES (Zero False Positives, Score = 100)
+# ==============================================================================
+
+# Line 1: Hydration claim with compliant Latin disclosure
+Daily hydration ke liye gentle moisturizer, suitable for sensitive skin. #ad
+
+# Line 2: Barrier protection with compliant native Devanagari disclosure
+Yeh lotion twacha ko dry hone se bachata hai aur fresh feel deta hai. #विज्ञापन
+
+# Line 3: Ayurvedic health benefits with compliant collaboration tag
+Humari chai mein hai natural tulsi aur adrak ke swasthya gun. #collab
+
+# Line 4: Sunscreen usage benefit with compliant sponsorship tag
+Regular sunscreen use karne se sun damage se protection milti hai. #sponsored
+
+# Line 5: Cleansing benefit without promotional CTA (editorial / educational copy)
+Yeh face wash daily dirt aur excess oil ko clean karne mein madad karta hai.
+
+
+# ==============================================================================
+# SECTION 3: VERNACULAR & LATIN SPELLING VARIANTS (Must Flag Prohibited Roots)
+# ==============================================================================
+
+# 3A. Efficacy Superlative Variants ("asar" vs "asr" vs "असर")
+Yeh lotion deta hai 100% asar #vigyapan
+Yeh lotion deta hai 100% asr #vigyapan
+यह लोशन देता है १००% असर #विज्ञापन
+
+# 3B. Miraculous Remedy Variants ("chamatkari" vs "chamatkarik" vs "chmatkari" vs "चमत्कारी")
+Yeh chamatkari tel baalon ke liye hai #vigyapan
+Yeh chamatkarik formula acne ke liye hai #vigyapan
+Yeh chmatkari lepa skin ke liye hai #vigyapan
+यह चमत्कारी तेल बालों के लिए है #विज्ञापन
+
+# 3C. Root Eradication Variants ("jad se" vs "jadd se" vs "जड़ se" vs "जड़ से")
+Hamara tel baalon ko jad se ugata hai #vigyapan
+Hamara tel baalon ko jadd se ugata hai #vigyapan
+Hamara tel baalon ko जड़ se ugata hai #vigyapan
+Hamara tel baalon ko जड़ से ugata hai #vigyapan
+
+
+# ==============================================================================
+# SECTION 4: CODE-MIXED / MIXED SCRIPT PHRASES (0 False Positives when Compliant)
+# ==============================================================================
+
+# Mixed Latin-Devanagari with compliant Devanagari disclosure
+DermaCare cream lagane se twacha mein नमी बनी रहती है #विज्ञापन
+
+# Mixed Devanagari-Latin with compliant Latin disclosure
+यह आयुर्वेदिक तेल natural herbs se bana hai #ad

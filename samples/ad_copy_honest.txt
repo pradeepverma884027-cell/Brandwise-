@@ -1,0 +1,25 @@
+# ==============================================================================
+# Brandwise Sample Marketing Copy: HONEST, SUBSTANTIATED & COMPLIANT
+# File: samples/ad_copy_honest.txt
+# Expected Result: 0 Discrepancies, Verified Citations, Compliance Score 100/100
+# ==============================================================================
+
+DermaCare Advanced Hydrating Serum is formulated to support deep barrier health and daily moisture balance.
+
+In an independent 14-day randomized clinical trial, participants experienced up to a 94.2% increase in stratum corneum hydration and an observed 68.0% reduction in inflammatory acne lesions (Protocol CS-2026-88, N=120 subjects, p < 0.001). 
+
+Regular daily application also helped improve surface oil balance with a 42.5% reduction in casual sebum excretion and a 31.9% reduction in transepidermal water loss over the 14-day evaluation period. Suitable for sensitive and acne-prone skin.
+
+Results observed as part of a daily skincare regimen. Individual outcomes may vary based on skin type.
+
+#ad #DermaCare #ClinicalSkincare #EvidenceBased
+
+# ==============================================================================
+# Compliance Attributes:
+# 1. Exact Numerical Match: 94.2% hydration, 68.0% acne lesion, 42.5% sebum, 31.9% TEWL
+# 2. Honest Protocol Timeline: 14-day clinical study duration faithfully stated
+# 3. Statutory Verification Citation: Protocol CS-2026-88, N=120, p < 0.001
+# 4. Mandatory Disclosure Present: Includes #ad at beginning of hashtag block
+# 5. Responsible Framing: "up to", "observed", "individual outcomes may vary"
+# 6. Zero Prohibited Superlatives: No magic claims, no permanent cure promises
+# ==============================================================================
