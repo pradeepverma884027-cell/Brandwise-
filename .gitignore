@@ -1,3 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Environments & Virtual Environments
+.env
+.env.*
+.venv
+env/
+venv/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# IDE & Editor metadata
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary and local runtime files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Agent metadata and scratch debris
 .agents/
 aktu_*
 claude_*
@@ -7,6 +42,7 @@ extracted_*
 ryzen_*
 scratch_*
 script_*
-*.tmp
+
+# Runtime uploads
 uploads/
 codex/uploads/
