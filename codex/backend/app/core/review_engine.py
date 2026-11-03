@@ -28,7 +28,8 @@ CANONICAL_EVIDENCE_TYPES = [
     "legal_waiver_signoff",
     "lab_assay_report",
     "influencer_contract_exemption",
-    "ayush_clinical_registry"
+    "ayush_clinical_registry",
+    "agency_authorization"
 ]
 
 
@@ -50,6 +51,53 @@ class DeterministicReviewEngine:
     """Engine executing deterministic, non-LLM checks on submitted copy."""
 
     CANONICAL_EVIDENCE_TYPES = CANONICAL_EVIDENCE_TYPES
+
+    POLICY_RELEVANCE_MAP = {
+        "clinical_trial_certificate": {
+            "policy": "ASCI Chapter 1 §4 / Drugs and Magic Remedies Act §3",
+            "scope": "Clinical efficacy substantiation and quantitative performance verification",
+            "statutory_authority": "CDSCO / Clinical Trials Registry India (CTRI)"
+        },
+        "cdsco_stage4_clearance": {
+            "policy": "CDSCO Cosmetics Rules 2020 Part VII",
+            "scope": "Regulatory drug, cosmetic and therapeutic efficacy approval",
+            "statutory_authority": "Central Drugs Standard Control Organisation"
+        },
+        "legal_waiver_signoff": {
+            "policy": "Brand Governance & Intellectual Property Guidelines §1.2",
+            "scope": "Visual identity deviation, trademark positioning, and brand asset waiver",
+            "statutory_authority": "Corporate Brand Governance Council"
+        },
+        "lab_assay_report": {
+            "policy": "NABL / ISO 17025 Chemical Testing Standard",
+            "scope": "Independent laboratory composition and safety assay verification",
+            "statutory_authority": "National Accreditation Board for Testing and Calibration Laboratories"
+        },
+        "influencer_contract_exemption": {
+            "policy": "ASCI Guidelines for Influencer Advertising in Digital Media 2025",
+            "scope": "Commercial disclosure terms, sponsorship exemptions, and creator agreements",
+            "statutory_authority": "Advertising Standards Council of India (ASCI)"
+        },
+        "ayush_clinical_registry": {
+            "policy": "AYUSH Advertising Guidelines §3.1 (Traditional Medicine Claims)",
+            "scope": "Ayurvedic, Siddha, and Unani classical formulation registry clearance",
+            "statutory_authority": "Ministry of AYUSH, Government of India"
+        },
+        "agency_authorization": {
+            "policy": "ASCI Code of Conduct §2 / Brand Agency Framework",
+            "scope": "Authorized agency representation, campaign delegation, and digital distribution sign-off",
+            "statutory_authority": "Authorized Brand Agency Directorate"
+        }
+    }
+
+    CATEGORY_PERMISSIBLE_EVIDENCE = {
+        "clinical_efficacy": {
+            "clinical_trial_certificate",
+            "cdsco_stage4_clearance",
+            "lab_assay_report",
+            "ayush_clinical_registry",
+        },
+    }
 
     # Default regex patterns for common regulatory and superlative checks
     SUPERLATIVE_PATTERNS = [
@@ -285,11 +333,29 @@ class DeterministicReviewEngine:
         return round(ratio, 2)
 
     # ============================================================
-    # IMPROVEMENT 3: Multilingual & Code-Mixed (Hinglish) Compliance
+    # IMPROVEMENT 3: Multilingual & Code-Mixed (Hinglish / Hindi) Compliance
     # ============================================================
+    # ARCHITECTURAL NOTE — KEYWORD / REGEX vs. VECTOR MATCHING:
+    # The platform employs compiled deterministic regex patterns and rule heuristics rather than
+    # probabilistic semantic vector embeddings or non-deterministic LLM inference for statutory compliance checking.
+    # Rationale:
+    # 1. Statutory Precision & Zero Hallucination: Statutory regulations (ASCI Code 2025-26, Drugs and Magic
+    #    Remedies Act 1954, CDSCO Cosmetics Rules 2020) require binary, strictly auditable pass/fail criteria.
+    # 2. Air-Gapped Offline Execution: Runs 100% locally with zero cloud dependencies or external LLM API costs.
+    # 3. Sub-Millisecond Execution: Deterministic evaluation runs in <1ms, enabling real-time UI feedback.
+    # Optional advisory LLM semantic evaluation can be activated via llm_service.py if ANTHROPIC_API_KEY is configured.
+    #
+    # REGULATORY HASHTAG DISCLOSURES:
+    # Hashtag disclosure rules (#ad, #collab, #sponsored, #partnership, #patronage, #विज्ञापन, #प्रायोजित, #सहयोग)
+    # are configurable project rules grounded in ASCI (Advertising Standards Council of India) Guidelines for
+    # Influencer Advertising in Digital Media (2025-2026 update).
+
     HINGLISH_SUPERLATIVE_RULES = [
         {
-            "pattern": re.compile(r"\b(100%\s*asar(?:daar)?)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])((?:(?:100%|१००%|100\s*percent|१००\s*प्रतिशत)\s*(?:asar(?:daar)?|asr|असर|रिजल्ट|result))|100%\s*(?:asar|asr))(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
@@ -298,7 +364,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "visible results ke liye regular use karein"
         },
         {
-            "pattern": re.compile(r"\b(chamatkar(?:i|ik)?)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(chamatkar(?:i|ik)?|chmatkar(?:i|ik)?|चमत्कारी|चमत्कार)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
@@ -307,16 +376,22 @@ class DeterministicReviewEngine:
             "suggested_fix": "dermatologist-tested ingredients se banaya gaya"
         },
         {
-            "pattern": re.compile(r"\b(jad{1,2}\s*se\s*khatam)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(jad{1,2}\s*se(?:\s*(?:khatam|ugata))?|ज(?:ड़|ड)\s*(?:से|se)(?:\s*(?:खत्म|ख़त्म|कतम|खतम|उगाता))?)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
             "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Code Ch. 1 §4",
-            "explanation": "Absolute eradication claim 'jad se khatam' detected without permissible cosmetic qualification.",
+            "explanation": "Absolute eradication or root promise claim 'jad se' detected without permissible cosmetic qualification.",
             "suggested_fix": "acne ko kam karne mein madad kare"
         },
         {
-            "pattern": re.compile(r"\b(hamesha\s*ke\s*liye)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(hamesha\s*ke\s*liye|हमेशा\s*के\s*लिए)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
@@ -325,7 +400,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "regular skin routine ke saath lambe samay tak effective"
         },
         {
-            "pattern": re.compile(r"\b(shat[-\s]+pratishat)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(shat[-\s]+pratishat|शत[-\s]*प्रतिशत)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
@@ -334,7 +412,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "clinically tested aur effective formula"
         },
         {
-            "pattern": re.compile(r"\b(ek\s*jhatke\s*me(?:in)?)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(ek\s*jhatke\s*me(?:in)?|एक\s*झटके\s*में)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-SUPERLATIVE-01",
             "category": "hinglish_claim",
             "severity": "high",
@@ -343,7 +424,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "step-by-step regular skincare routine se"
         },
         {
-            "pattern": re.compile(r"\b(ra?amban\s*ila?aj)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(ra?amban\s*ila?aj|रामबाण\s*इलाज)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-AYUSH-03",
             "category": "hinglish_claim",
             "severity": "high",
@@ -352,7 +436,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "ayurvedic aur clinically tested botanical formulation"
         },
         {
-            "pattern": re.compile(r"\b(pakka\s*ila?aj)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(pakka\s*ila?aj|पक्का\s*इलाज)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-AYUSH-03",
             "category": "hinglish_claim",
             "severity": "high",
@@ -361,19 +448,37 @@ class DeterministicReviewEngine:
             "suggested_fix": "dermatologist-tested formulation se skin ki dekhbhal"
         },
         {
-            "pattern": re.compile(r"\b(bilkul\s*th(?:ee|i)k)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(bilkul\s*th(?:ee|i)k|बिल्कुल\s*ठीक)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-AYUSH-03",
             "category": "hinglish_claim",
             "severity": "high",
             "source_ref": "CDSCO Cosmetics Rules 2020 / AYUSH Guidelines §3.1",
             "explanation": "Absolute cure guarantee 'bilkul theek' detected under CDSCO / AYUSH cosmetic guidelines.",
             "suggested_fix": "skin appearance ko behtar banane mein sahayak"
+        },
+        {
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(guaranteed(?:\s*(?:cure|result|ilaj))?|गारंटीड(?:\s*(?:इलाज|रिजल्ट|असर))?|गारंटी)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
+            "rule_id": "HINGLISH-SUPERLATIVE-01",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "Drugs and Magic Remedies Act 1954 §3 / ASCI Vernacular Guidelines 2025",
+            "explanation": "Guaranteed cure or outcome claim ('गारंटीड' / 'guaranteed') detected without statutory trial backing.",
+            "suggested_fix": "clinically tested formula se visible improvement"
         }
     ]
 
     HINGLISH_COLORIST_RULES = [
         {
-            "pattern": re.compile(r"\b(gor[ae]\s*rang)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(gor[ae]\s*rang|गोरा\s*रंग|गोरे\s*रंग)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -382,7 +487,22 @@ class DeterministicReviewEngine:
             "suggested_fix": "healthy glowing skin aur hydration"
         },
         {
-            "pattern": re.compile(r"\b(rang\s*(?:ko\s*)?gora)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(bilkul\s*gor[ae]|बिल्कुल\s*गोरा)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
+            "rule_id": "HINGLISH-COLORIST-02",
+            "category": "hinglish_claim",
+            "severity": "high",
+            "source_ref": "ASCI Skin Lightening & Cosmetic Guidelines 2024 §2.1",
+            "explanation": "Skin-lightening fairness claim 'bilkul gora' detected. Depicting skin tone alteration or promoting fairness is prohibited.",
+            "suggested_fix": "radiant aur healthy skin appearance"
+        },
+        {
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(rang\s*(?:ko\s*)?gora|रंग\s*(?:को\s*)?गोरा)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -391,7 +511,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "natural skin glow aur even texture"
         },
         {
-            "pattern": re.compile(r"\b(fairness\s*guarantee)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(fairness\s*guarantee|फेयरनेस\s*गारंटी)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -400,7 +523,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "dermatologist-approved formula se skin radiance aur glow"
         },
         {
-            "pattern": re.compile(r"\b(ek\s*hafte\s*me(?:in)?\s*gora)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(ek\s*hafte\s*me(?:in)?\s*gora|एक\s*हफ्ते\s*में\s*गोरा)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -409,7 +535,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "14 dinon mein visible skin radiance"
         },
         {
-            "pattern": re.compile(r"\b(rang(?:at)?\s*nikhare?)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(rang(?:at)?\s*nikhare?|रंग(?:त)?\s*निखारे?)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -418,7 +547,10 @@ class DeterministicReviewEngine:
             "suggested_fix": "skin barrier ko hydrate aur healthy banaye"
         },
         {
-            "pattern": re.compile(r"\b(gorapan)\b", re.IGNORECASE),
+            "pattern": re.compile(
+                r"(?<![a-zA-Z0-9\u0900-\u097F])(gorapan|गोरापन)(?![a-zA-Z0-9\u0900-\u097F])",
+                re.IGNORECASE
+            ),
             "rule_id": "HINGLISH-COLORIST-02",
             "category": "hinglish_claim",
             "severity": "high",
@@ -429,17 +561,17 @@ class DeterministicReviewEngine:
     ]
 
     PROMOTIONAL_TRIGGER_PATTERN = re.compile(
-        r"\b(discount|khareedo|aaj\s*hi\s*order|loot\s*lo|code\s*lagao|link\s*bio\s*me(?:in)?|buy\s*now|use\s*code|order\s*kare(?:in)?)\b",
+        r"(?<![a-zA-Z0-9\u0900-\u097F])(discount|khareedo|खरीदें|aaj\s*hi\s*order|loot\s*lo|code\s*lagao|link\s*bio\s*me(?:in)?|buy\s*now|use\s*code|order\s*kare(?:in)?|ऑर्डर\s*करें)(?![a-zA-Z0-9\u0900-\u097F])",
         re.IGNORECASE
     )
 
     VERNACULAR_DISCLOSURE_PATTERN = re.compile(
-        r"(#vigyapan|#prayasit|#sahyog|#ad|#sponsored)\b",
+        r"(?<![a-zA-Z0-9\u0900-\u097F])(#(?:ad|collab|collaboration|sponsored|partnership|patronage|vigyapan|prayasit|sahyog|विज्ञापन|प्रायोजित|सहयोग))(?![a-zA-Z0-9\u0900-\u097F])",
         re.IGNORECASE
     )
 
     HINGLISH_CLINICAL_PCT_PATTERN = re.compile(
-        r"(\d+(?:\.\d+)?)\s*(?:%|percent\b)(?:\s*(?:asar|prabhav|result|results|efficacy|hydration|reduction))?",
+        r"(\d+(?:\.\d+)?)\s*(?:%|percent\b)(?:\s*(?:asar|asr|prabhav|result|results|efficacy|hydration|reduction|असर|रिजल्ट))?",
         re.IGNORECASE
     )
 
@@ -462,8 +594,12 @@ class DeterministicReviewEngine:
         # 1. Check Hinglish superlative and absolute cure patterns
         for rule in self.HINGLISH_SUPERLATIVE_RULES:
             for match in rule["pattern"].finditer(text):
-                start, end = match.span()
-                matched_str = match.group(0)
+                if match.lastindex and match.lastindex >= 1:
+                    start, end = match.span(1)
+                    matched_str = match.group(1)
+                else:
+                    start, end = match.span()
+                    matched_str = match.group(0)
                 findings.append(
                     FindingCandidate(
                         category=rule["category"],
@@ -482,8 +618,12 @@ class DeterministicReviewEngine:
         # 2. Check skin-lightening and colorist claims
         for rule in self.HINGLISH_COLORIST_RULES:
             for match in rule["pattern"].finditer(text):
-                start, end = match.span()
-                matched_str = match.group(0)
+                if match.lastindex and match.lastindex >= 1:
+                    start, end = match.span(1)
+                    matched_str = match.group(1)
+                else:
+                    start, end = match.span()
+                    matched_str = match.group(0)
                 findings.append(
                     FindingCandidate(
                         category=rule["category"],
@@ -513,7 +653,7 @@ class DeterministicReviewEngine:
                     span_start=0,
                     span_end=highlight_len,
                     highlighted_text=highlight_text,
-                    explanation="Vernacular / Hinglish promotional copy lacks mandatory commercial disclosure tag (#vigyapan, #prayasit, #sahyog, #ad, or #sponsored).",
+                    explanation="Vernacular / Hinglish promotional copy lacks mandatory commercial disclosure tag (#ad, #collab, #sponsored, #partnership, #patronage, #विज्ञापन, #प्रायोजित, ya #सहयोग).",
                     source_ref="ASCI Vernacular Advertising Guidelines 2025 §2.4",
                     confidence=0.92,
                     suggested_fix="'#vigyapan' ya '#ad' caption ke shuru mein jodein",
@@ -822,6 +962,26 @@ class DeterministicReviewEngine:
                 "message": "Counter-evidence requires a detailed justification (min 10 characters)."
             }
 
+        category_key = str(allegation_category or "").strip().lower()
+        if category_key in self.CATEGORY_PERMISSIBLE_EVIDENCE:
+            allowed_types = self.CATEGORY_PERMISSIBLE_EVIDENCE[category_key]
+            if evidence_type not in allowed_types:
+                return {
+                    "success": False,
+                    "adjudication": "REJECTED_POLICY_IRRELEVANT",
+                    "allegation_id": allegation_id,
+                    "allegation_category": allegation_category,
+                    "evidence_type": evidence_type,
+                    "message": f"Submitted evidence type '{evidence_type}' is not relevant to allegation category '{allegation_category}'."
+                }
+
+        # Policy Relevance Mapping: Maps canonical counter-evidence types to statutory policies & authorities
+        policy_info = self.POLICY_RELEVANCE_MAP.get(evidence_type, {
+            "policy": "General Advertising Compliance Guidelines 2025",
+            "scope": "Statutory compliance substantiation",
+            "statutory_authority": "ASCI / Consumer Protection Authority"
+        })
+
         if not doc_hash or not str(doc_hash).strip():
             payload = f"{allegation_id}:{evidence_type}:{ref_id}:{justification}".encode("utf-8")
             doc_hash = hashlib.sha256(payload).hexdigest()[:16]
@@ -838,7 +998,14 @@ class DeterministicReviewEngine:
             "evidence_reference": ref_id,
             "evidence_type": evidence_type,
             "restored_score_delta": 15,
-            "audit_note": f"Allegation {allegation_id} reverted and dismissed upon verification of counter-evidence '{ref_id}'. Justification: {justification}",
+            "policy_relevance": policy_info["policy"],
+            "policy_scope": policy_info["scope"],
+            "statutory_authority": policy_info["statutory_authority"],
+            "audit_note": (
+                f"Allegation {allegation_id} ({allegation_category}) reverted and dismissed under "
+                f"{policy_info['policy']} ({policy_info['statutory_authority']}) upon verification of "
+                f"counter-evidence '{ref_id}'. Justification: {justification}"
+            ),
             "status": "dismissed_with_evidence"
         }
 

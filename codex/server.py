@@ -148,6 +148,69 @@ FRONTEND_DIR = find_frontend_dir()
 # In-memory OTP storage: email -> { "otp": str, "expires": float, "user_info": dict }
 OTP_STORE = {}
 
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB maximum upload limit
+DB_LOCK = threading.RLock()
+
+def safe_str(val: Any) -> str:
+    """Safely convert value to stripped string without throwing AttributeError on non-string types."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val.strip()
+    return str(val).strip()
+
+def atomic_save_json(filepath: str, data: Any, max_retries: int = 3) -> bool:
+    """
+    Safely and atomically persist JSON data to disk using temporary file + fsync + os.replace.
+    Thread-safe via DB_LOCK and includes Windows file-locking retry backoff to prevent PermissionError.
+    """
+    with DB_LOCK:
+        tmp_path = f"{filepath}.{os.getpid()}.{random.randint(100000, 999999)}.tmp"
+        try:
+            target_dir = os.path.dirname(filepath)
+            if target_dir:
+                os.makedirs(target_dir, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except (OSError, AttributeError):
+                    pass
+
+            for attempt in range(max_retries):
+                try:
+                    os.replace(tmp_path, filepath)
+                    return True
+                except PermissionError as pe:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.025 * (2 ** attempt))
+                    else:
+                        # Fallback copy if os.replace fails on Windows file-locking contention
+                        try:
+                            with open(tmp_path, "r", encoding="utf-8") as rf:
+                                content = rf.read()
+                            with open(filepath, "w", encoding="utf-8") as wf:
+                                wf.write(content)
+                            if os.path.exists(tmp_path):
+                                os.remove(tmp_path)
+                            return True
+                        except Exception as fb_err:
+                            print(f"[ATOMIC SAVE] Fallback write error for {filepath}: {fb_err}")
+                            raise pe
+                except Exception as ex:
+                    print(f"[ATOMIC SAVE] Unexpected replace error for {filepath}: {ex}")
+                    raise ex
+            return True
+        except Exception as e:
+            print(f"[ATOMIC SAVE] Error saving {filepath}: {e}")
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+            return False
+
 # Supabase Store Configuration (can be overridden via environment variables)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xyzcompany.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.brandwise-demo-anon-key")
@@ -242,7 +305,7 @@ def load_supabase_users():
             "updated_at": None
         }
     }
-    SUPABASE_MOCK_TABLES["users"] = list(default_users.values())
+    save_supabase_users(default_users)
     return default_users
 
 def load_brand_submissions():
@@ -251,7 +314,7 @@ def load_brand_submissions():
         try:
             with open(SUBMISSIONS_DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data, list) and data:
+                if isinstance(data, list):
                     for s in data:
                         s.setdefault("findings", [])
                         s.setdefault("has_clinical_discrepancies", False)
@@ -322,27 +385,16 @@ def load_brand_submissions():
     return default_submissions
 
 def save_brand_submissions(submissions_list):
-    """Save brand submissions to disk and in-memory Supabase store."""
-    try:
-        os.makedirs(os.path.dirname(SUBMISSIONS_DB_FILE), exist_ok=True)
-        with open(SUBMISSIONS_DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(submissions_list, f, indent=2)
-    except Exception as e:
-        print(f"[SUBMISSIONS] Notice saving {SUBMISSIONS_DB_FILE}: {e}")
+    """Save brand submissions to disk atomically and sync to in-memory Supabase store."""
+    atomic_save_json(SUBMISSIONS_DB_FILE, submissions_list)
     SUPABASE_MOCK_TABLES["brand_submissions"] = submissions_list
 
 # Initialize brand submissions database
 load_brand_submissions()
 
 def save_supabase_users(users_dict):
-    """Save users table to disk and sync to in-memory Supabase store."""
-    try:
-        os.makedirs(os.path.dirname(USERS_DB_FILE), exist_ok=True)
-        with open(USERS_DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(users_dict, f, indent=2)
-    except Exception as e:
-        print(f"[SUPABASE USERS] Notice saving {USERS_DB_FILE}: {e}")
-
+    """Save users table to disk atomically and sync to in-memory Supabase store."""
+    atomic_save_json(USERS_DB_FILE, users_dict)
     SUPABASE_MOCK_TABLES["users"] = list(users_dict.values())
 
 def save_user_password_in_supabase(email, password, role="Administrator", name=None, tenant="DermaCare Global Healthcare"):
@@ -621,6 +673,50 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        if clean_path.startswith("/api/submissions/certificate/"):
+            cert_query = clean_path[len("/api/submissions/certificate/"):].strip()
+            submissions = load_brand_submissions()
+            match = None
+            for s in submissions:
+                if (cert_query and s.get("certificate_id") == cert_query) or (cert_query and s.get("id") == cert_query):
+                    match = s
+                    break
+            if match:
+                lan_ip = get_lan_ip()
+                port = self.server.server_port
+                cert_val = match.get("certificate_id", cert_query)
+                verify_url = f"http://{lan_ip}:{port}/verify.html?cert={cert_val}"
+                self.send_json_response({
+                    "status": "success",
+                    "certificate_id": cert_val,
+                    "submission_id": match.get("id"),
+                    "audit_hash": match.get("audit_hash"),
+                    "submission": match,
+                    "verify_url": verify_url
+                })
+            else:
+                self.send_json_response({
+                    "status": "error",
+                    "message": f"Certificate or submission '{cert_query}' not found"
+                }, status=404)
+            return
+
+        if clean_path.startswith("/api/submissions/") and clean_path not in ("/api/submissions/audit-report", "/api/submissions/approve", "/api/submissions/reject"):
+            sub_query = clean_path[len("/api/submissions/"):].strip()
+            submissions = load_brand_submissions()
+            match = next((s for s in submissions if s.get("id") == sub_query or s.get("certificate_id") == sub_query), None)
+            if match:
+                self.send_json_response({
+                    "status": "success",
+                    "submission": match
+                })
+            else:
+                self.send_json_response({
+                    "status": "error",
+                    "message": f"Submission '{sub_query}' not found"
+                }, status=404)
+            return
+
         # Channel configuration endpoint
         if clean_path == "/api/channels":
             self.send_json_response({
@@ -777,24 +873,36 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > MAX_UPLOAD_SIZE:
+            self.send_json_response({
+                "status": "error",
+                "message": f"Upload payload exceeds maximum limit of 25MB ({content_length} bytes)"
+            }, status=413)
+            return
+
         clean_path = self.path.split('?')[0].split('#')[0].rstrip('/')
         if clean_path.startswith('/codex'):
             clean_path = clean_path[len('/codex'):]
 
         # 1. User Uploads & Submits Brand Data for Administrator Approval
         if clean_path == "/api/submissions":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                brand_name = data.get("brand_name", "").strip() or "DermaCare Brand Line"
-                channel = data.get("channel", "instagram").strip()
-                channel_name = data.get("channel_name", "Social & Influencer").strip()
-                content = data.get("content", "").strip()
-                claims = data.get("claims", "").strip()
-                evidence_file = data.get("evidence_file", "").strip()
-                submitted_by = data.get("submitted_by", "creator@dermacare.com").strip()
-                submitted_by_name = data.get("submitted_by_name", "Brand Creator").strip()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                brand_name = safe_str(data.get("brand_name")) or "DermaCare Brand Line"
+                channel = safe_str(data.get("channel")) or "instagram"
+                channel_name = safe_str(data.get("channel_name")) or "Social & Influencer"
+                content = safe_str(data.get("content"))
+                claims = safe_str(data.get("claims"))
+                evidence_file = safe_str(data.get("evidence_file"))
+                submitted_by = safe_str(data.get("submitted_by")) or "creator@dermacare.com"
+                submitted_by_name = safe_str(data.get("submitted_by_name")) or "Brand Creator"
 
                 if not content:
                     self.send_json_response({"status": "error", "message": "Brand content / copy cannot be empty."}, status=400)
@@ -846,7 +954,35 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 score = max(20, min(score, 98))
 
                 now_utc = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-                sub_id = f"SUB-{random.randint(9024, 9999)}"
+                submissions = load_brand_submissions()
+                existing_ids = {s.get("id") for s in submissions}
+                client_id = safe_str(data.get("id") or data.get("sub_id") or data.get("submission_id"))
+                if client_id and client_id in existing_ids:
+                    # Duplicate submission ID handled safely without data corruption
+                    existing_sub = next(s for s in submissions if s.get("id") == client_id)
+                    existing_sub["content"] = content
+                    existing_sub["claims"] = claims or existing_sub.get("claims")
+                    existing_sub["findings"] = findings
+                    existing_sub["compliance_score"] = score
+                    existing_sub["has_clinical_discrepancies"] = len(findings) > 0
+                    existing_sub["clinical_discrepancies_count"] = len(findings)
+                    save_brand_submissions(submissions)
+                    self.send_json_response({
+                        "status": "success",
+                        "message": f"Brand data ({client_id}) updated safely (duplicate submission handled without data corruption)!",
+                        "submission": existing_sub,
+                        "findings": findings,
+                        "compliance_score": score,
+                        "sub_id": client_id,
+                        "is_duplicate": True
+                    })
+                    return
+                elif client_id:
+                    sub_id = client_id
+                else:
+                    sub_id = f"SUB-{random.randint(9024, 9999)}"
+                    while sub_id in existing_ids:
+                        sub_id = f"SUB-{random.randint(9024, 99999)}"
 
                 new_sub = {
                     "id": sub_id,
@@ -871,7 +1007,6 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     "review_notes": None
                 }
 
-                submissions = load_brand_submissions()
                 submissions.insert(0, new_sub)
                 save_brand_submissions(submissions)
 
@@ -891,7 +1026,8 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     "message": f"Brand data ({sub_id}) successfully submitted for Administrator governance review!",
                     "submission": new_sub,
                     "findings": findings,
-                    "compliance_score": score
+                    "compliance_score": score,
+                    "sub_id": sub_id
                 })
             except Exception as e:
                 self.send_json_response({"status": "error", "message": str(e)}, status=500)
@@ -899,7 +1035,6 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # Ingest and Extract Clinical Evidence PDF Dossier
         if clean_path == "/api/clinical/upload":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             content_type = self.headers.get('Content-Type', '')
 
@@ -922,18 +1057,35 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     pdf_bytes = body
                     filename = self.headers.get("X-Filename", "uploaded_study.pdf")
                 else:
-                    data = json.loads(body.decode('utf-8')) if body else {}
-                    filename = data.get("filename", "uploaded_study.pdf")
+                    try:
+                        data = json.loads(body.decode('utf-8')) if body else {}
+                    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                        self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                        return
+
+                    filename = safe_str(data.get("filename")) or "uploaded_study.pdf"
                     raw_b64 = data.get("file_data") or data.get("file") or data.get("pdf_data") or ""
                     if not raw_b64:
                         self.send_json_response({"status": "error", "message": "Missing file_data in upload request"}, status=400)
                         return
-                    if "," in raw_b64 and "base64" in raw_b64.split(",")[0]:
+                    if isinstance(raw_b64, str) and "," in raw_b64 and "base64" in raw_b64.split(",")[0]:
                         raw_b64 = raw_b64.split(",", 1)[1]
-                    pdf_bytes = base64.b64decode(raw_b64)
+                    try:
+                        pdf_bytes = base64.b64decode(raw_b64)
+                    except Exception as b64_err:
+                        self.send_json_response({"status": "error", "message": f"Invalid base64 payload: {b64_err}"}, status=400)
+                        return
 
                 if not pdf_bytes or len(pdf_bytes) == 0:
                     self.send_json_response({"status": "error", "message": "Uploaded PDF payload is empty"}, status=400)
+                    return
+
+                if len(pdf_bytes) > MAX_UPLOAD_SIZE:
+                    self.send_json_response({"status": "error", "message": f"File size exceeds maximum limit of 25MB ({len(pdf_bytes)} bytes)"}, status=413)
+                    return
+
+                if not pdf_bytes.startswith(b"%PDF-"):
+                    self.send_json_response({"status": "error", "message": "Invalid file format: Expected a valid PDF document starting with '%PDF-' header"}, status=400)
                     return
 
                 if ClinicalTrialPDFExtractor is None:
@@ -943,8 +1095,9 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 # Parse and extract clinical trial endpoints
                 extracted_study = ClinicalTrialPDFExtractor.extract_from_pdf(pdf_bytes)
 
-                # Persist PDF file to uploads directory
-                safe_filename = os.path.basename(filename) or f"study_{int(time.time())}.pdf"
+                # Persist PDF file to uploads directory with cross-platform sanitized filename
+                clean_name = filename.replace("\\", "/").rstrip("/")
+                safe_filename = os.path.basename(clean_name) or f"study_{int(time.time())}.pdf"
                 upload_dirs = [
                     os.path.join(WORKSPACE_ROOT, "codex", "uploads", "clinical_evidence"),
                     os.path.join(WORKSPACE_ROOT, "uploads", "clinical_evidence")
@@ -984,12 +1137,16 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # Marketing Copy Discrepancy Verification against Clinical Evidence Dossiers
         if clean_path == "/api/clinical/verify-copy":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
                 data = json.loads(body.decode('utf-8')) if body else {}
-                copy_text = data.get("copy_text") or data.get("text", "")
-                study_id = data.get("study_id")
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                copy_text = safe_str(data.get("copy_text") or data.get("text"))
+                study_id = safe_str(data.get("study_id")) or None
 
                 if evaluate_clinical_discrepancies is None:
                     self.send_json_response({"status": "error", "message": "Clinical discrepancy engine is unavailable"}, status=500)
@@ -1018,14 +1175,18 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # 2. Administrator Approves Brand Submission & Releases Audit Certificate
         if clean_path == "/api/submissions/approve":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                sub_id = data.get("submission_id", "").strip()
-                reviewer_name = data.get("reviewer_name", "System Administrator").strip()
-                reviewer_role = data.get("reviewer_role", "Administrator").strip()
-                review_notes = data.get("review_notes", "All clinical claims, DPDP 2025 zero-retention rules, and ASCI disclosures verified and approved.").strip()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                sub_id = safe_str(data.get("submission_id"))
+                reviewer_name = safe_str(data.get("reviewer_name")) or "System Administrator"
+                reviewer_role = safe_str(data.get("reviewer_role")) or "Administrator"
+                review_notes = safe_str(data.get("review_notes")) or "All clinical claims, DPDP 2025 zero-retention rules, and ASCI disclosures verified and approved."
 
                 submissions = load_brand_submissions()
                 target_sub = None
@@ -1081,14 +1242,18 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # 3. Administrator Rejects Brand Submission with Reviewer Feedback
         if clean_path == "/api/submissions/reject":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                sub_id = data.get("submission_id", "").strip()
-                reviewer_name = data.get("reviewer_name", "System Administrator").strip()
-                reviewer_role = data.get("reviewer_role", "Administrator").strip()
-                review_notes = data.get("review_notes", "Content does not meet pre-publication guidelines. Please revise claims or commercial disclosures.").strip()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                sub_id = safe_str(data.get("submission_id"))
+                reviewer_name = safe_str(data.get("reviewer_name")) or "System Administrator"
+                reviewer_role = safe_str(data.get("reviewer_role")) or "Administrator"
+                review_notes = safe_str(data.get("review_notes")) or "Content does not meet pre-publication guidelines. Please revise claims or commercial disclosures."
 
                 submissions = load_brand_submissions()
                 target_sub = None
@@ -1131,15 +1296,19 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # Explicit User & Administrator Registration with Password saved in Supabase
         if clean_path == "/api/auth/register":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                email = data.get("email", "").strip().lower()
-                password = str(data.get("password", "")).strip()
-                role = data.get("role", "Administrator").strip()
-                name = data.get("name", "").strip()
-                tenant = data.get("tenant", "DermaCare Global Healthcare").strip()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                email = safe_str(data.get("email")).lower()
+                password = safe_str(data.get("password"))
+                role = safe_str(data.get("role")) or "Administrator"
+                name = safe_str(data.get("name"))
+                tenant = safe_str(data.get("tenant")) or "DermaCare Global Healthcare"
 
                 if not email or "@" not in email:
                     self.send_json_response({"status": "error", "message": "Valid email address is required."}, status=400)
@@ -1180,13 +1349,17 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # Direct Password Authentication (Verifies against Supabase; auto-saves password on first registration)
         if clean_path == "/api/auth/login":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                role_select = data.get("role", "").strip().lower() # "admin" or "chief" or "user"
-                password = str(data.get("password", "")).strip()
-                email = data.get("email", "").strip().lower()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                role_select = safe_str(data.get("role")).lower() # "admin" or "chief" or "user"
+                password = safe_str(data.get("password"))
+                email = safe_str(data.get("email")).lower()
 
                 if not password:
                     self.send_json_response({
@@ -1216,7 +1389,7 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 first_time_registered = False
                 if not target_user or not target_user.get("is_registered") or not target_user.get("password_hash"):
                     role_title = "Administrator" if role_select == "admin" else ("Chief Governance Officer" if role_select == "chief" else "Administrator")
-                    name = data.get("name") or (target_user.get("name") if target_user else None)
+                    name = safe_str(data.get("name")) or (target_user.get("name") if target_user else None)
                     target_user = save_user_password_in_supabase(
                         email=email or f"{role_select}@dermacare.com",
                         password=password,
@@ -1279,12 +1452,16 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # 2. Email OTP Generator (Restricted strictly to the two authorized roles)
         if clean_path == "/api/auth/send-otp":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                email = data.get("email", "").strip().lower()
-                role_select = data.get("role", "").strip().lower()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                email = safe_str(data.get("email")).lower()
+                role_select = safe_str(data.get("role")).lower()
 
                 # Map input from Supabase users store
                 users = load_supabase_users()
@@ -1319,34 +1496,42 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                     "user_info": user_info
                 }
 
-                print(f"[AUTH] Generated OTP for {target_user['email']}: {otp}")
-                self.send_json_response({
+                is_prod = bool(os.environ.get("ENV") == "production" or os.environ.get("RENDER"))
+                response_payload = {
                     "status": "success",
                     "message": f"Verification code sent to {target_user['email']}",
                     "email": target_user["email"],
-                    "otp": otp, # sent for simulator convenience
                     "expires_in": 300
-                })
+                }
+                if not is_prod:
+                    response_payload["otp"] = otp  # sent for simulator / development convenience
+                else:
+                    response_payload["otp_masked_in_production"] = True
+
+                print(f"[AUTH] Generated OTP for {target_user['email']}: {'***' if is_prod else otp}")
+                self.send_json_response(response_payload)
             except Exception as e:
                 self.send_json_response({"status": "error", "message": str(e)}, status=500)
             return
 
         # 3. OTP Verification
         if clean_path == "/api/auth/verify-otp":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                email = data.get("email", "").strip().lower()
-                otp = str(data.get("otp", "")).strip()
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                email = safe_str(data.get("email")).lower()
+                otp = safe_str(data.get("otp"))
 
                 users = load_supabase_users()
                 target_user = users.get(email)
                 record = OTP_STORE.get(email)
                 is_valid = False
-                if record and record["otp"] == otp and time.time() < record["expires"]:
-                    is_valid = True
-                elif otp in ("884192", "123456"):
+                if record and record.get("otp") == otp and time.time() < record.get("expires", 0):
                     is_valid = True
 
                 if not is_valid:
@@ -1399,12 +1584,18 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
 
         # 4. Supabase Record Insert / Audit Logger
         if clean_path == "/api/supabase/insert":
-            content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
             try:
-                data = json.loads(body.decode('utf-8'))
-                table = data.get("table", "audit_logs")
+                data = json.loads(body.decode('utf-8')) if body else {}
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as json_err:
+                self.send_json_response({"status": "error", "message": f"Malformed or invalid JSON payload: {json_err}"}, status=400)
+                return
+
+            try:
+                table = safe_str(data.get("table")) or "audit_logs"
                 record = data.get("record", {})
+                if not isinstance(record, dict):
+                    record = {}
                 sync_to_supabase(table, record)
                 self.send_json_response({
                     "status": "success",
@@ -1652,21 +1843,42 @@ class RobustVerificationHandler(SimpleHTTPRequestHandler):
                 if os.path.exists(candidate):
                     return candidate
 
-        # Route codex/frontend/... or frontend/... to FRONTEND_DIR
-        if clean_path.startswith("/codex/frontend/"):
-            rel = clean_path[len("/codex/frontend/"):]
-            return os.path.join(FRONTEND_DIR, rel)
-        if clean_path.startswith("/frontend/"):
-            rel = clean_path[len("/frontend/"):]
-            return os.path.join(FRONTEND_DIR, rel)
+        # Canonical FRONTEND_DIR for containment boundary checks
+        canonical_frontend = os.path.realpath(FRONTEND_DIR)
 
-        # Default fallback to frontend dir
-        rel = clean_path.lstrip("/")
-        candidate = os.path.join(FRONTEND_DIR, rel)
-        if os.path.exists(candidate):
-            return candidate
+        # Unquote URL path (e.g. %2e%2e -> ..)
+        unquoted_path = urllib.parse.unquote(clean_path)
 
-        return super().translate_path(path)
+        if unquoted_path.startswith("/codex/frontend/"):
+            rel = unquoted_path[len("/codex/frontend/"):].lstrip("/")
+            candidate = os.path.join(canonical_frontend, rel)
+        elif unquoted_path.startswith("/frontend/"):
+            rel = unquoted_path[len("/frontend/"):].lstrip("/")
+            candidate = os.path.join(canonical_frontend, rel)
+        else:
+            rel = unquoted_path.lstrip("/")
+            candidate = os.path.join(canonical_frontend, rel)
+
+        resolved_candidate = os.path.realpath(candidate)
+        try:
+            if os.path.commonpath([resolved_candidate, canonical_frontend]) == canonical_frontend:
+                if os.path.exists(resolved_candidate):
+                    return resolved_candidate
+        except (ValueError, Exception):
+            pass
+
+        # Check standard translate_path but strictly enforce FRONTEND_DIR boundary
+        std_path = super().translate_path(path)
+        resolved_std = os.path.realpath(std_path)
+        try:
+            if os.path.commonpath([resolved_std, canonical_frontend]) == canonical_frontend:
+                if os.path.exists(resolved_std):
+                    return resolved_std
+        except (ValueError, Exception):
+            pass
+
+        # Any path escaping canonical_frontend or not found maps to non-existent file for safe 404
+        return os.path.join(canonical_frontend, "__traversal_blocked_404__")
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")

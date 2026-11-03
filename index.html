@@ -1648,6 +1648,45 @@
       const [verifyTargetMode, setVerifyTargetMode] = useState(isRemoteDeploy ? 'cloud' : 'lan');
       const modalQrRef = useRef(null);
 
+      // Render Cold-Start Cloud Backend Health Indicator
+      const [backendStatus, setBackendStatus] = useState('checking'); // 'checking', 'waking', 'ready'
+
+      useEffect(() => {
+        let isMounted = true;
+        let checkCount = 0;
+        const maxChecks = 30; // 30 * 3s = 90s max
+
+        const checkBackendHealth = async () => {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            const resp = await fetch('/api/health', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (resp.ok) {
+              if (isMounted) setBackendStatus('ready');
+              return true;
+            }
+          } catch (e) {
+            // Server waking up or offline
+          }
+          if (isMounted) setBackendStatus('waking');
+          return false;
+        };
+
+        checkBackendHealth().then(ok => {
+          if (ok || !isMounted) return;
+          const interval = setInterval(async () => {
+            checkCount++;
+            const healthy = await checkBackendHealth();
+            if (healthy || checkCount >= maxChecks) {
+              clearInterval(interval);
+            }
+          }, 3000);
+        });
+
+        return () => { isMounted = false; };
+      }, []);
+
       // Fetch dynamic LAN IP on mount and whenever certificate modal opens (only when local)
       useEffect(() => {
         if (isRemoteDeploy) return; // Never overwrite public URL with LAN on Render or GitHub Pages
@@ -1780,15 +1819,77 @@
         triggerNotification(`Reset draft copy to default for ${selectedChannel}.`);
       };
 
-      const handleRunReview = () => {
+      const handleRunReview = async () => {
         setIsAnalyzing(true);
+        const config = CHANNEL_CONFIGS[selectedChannel] || CHANNEL_CONFIGS['Instagram Caption'];
+        const trimmedContent = (content || '').trim();
+
+        if (!trimmedContent) {
+          setIsAnalyzing(false);
+          setFindings([]);
+          setRestoredScoreDelta(0);
+          triggerNotification(`No copy to evaluate for ${selectedChannel}.`);
+          return;
+        }
+
+        // Check if copy is in Hinglish or if channel is Hinglish
+        const isHinglishChannel = selectedChannel.includes('Hinglish');
+        const hasVernacularWords = /[\u0900-\u097F]|(?:asar|chamatkar|jad se|gora|rang|din mein|vigyapan)/i.test(trimmedContent);
+
+        let detectedFindings = [];
+
+        if (isHinglishChannel || hasVernacularWords) {
+          try {
+            const resp = await fetch('/api/hinglish/check', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: trimmedContent,
+                channel: config.id || 'hinglish_instagram'
+              })
+            });
+            if (resp.ok) {
+              const resJson = await resp.json();
+              if (resJson.findings && Array.isArray(resJson.findings)) {
+                detectedFindings = resJson.findings.map(f => ({
+                  id: f.id || `f-${Math.random().toString(36).substr(2, 6)}`,
+                  category: f.category || 'claim',
+                  severity: f.severity || 'high',
+                  highlightedText: f.highlighted_text || f.highlightedText || '',
+                  explanation: f.explanation || '',
+                  sourceRef: f.source_ref || f.sourceRef || 'Compliance Rule',
+                  confidence: f.confidence || 0.95,
+                  suggestedFix: f.suggested_fix || f.suggestedFix || '',
+                  rule_id: f.rule_id,
+                  status: 'open'
+                }));
+              }
+            }
+          } catch (e) {
+            detectedFindings = simulateHinglishCompliance(trimmedContent, config.id || 'hinglish_instagram');
+          }
+        }
+
+        // For non-Hinglish channels or if backend returned no findings, match channel-configured rules against actual textarea content
+        if (detectedFindings.length === 0 && !isHinglishChannel) {
+          detectedFindings = (config.findings || []).filter(f => {
+            if (!f.highlightedText) return false;
+            const needle = f.highlightedText.toLowerCase().replace(/[^\w\s]/g, '').trim();
+            const haystack = trimmedContent.toLowerCase().replace(/[^\w\s]/g, '');
+            return haystack.includes(needle) || trimmedContent.toLowerCase().includes(f.highlightedText.toLowerCase());
+          }).map(f => ({ ...f, status: 'open' }));
+        }
+
         setTimeout(() => {
           setIsAnalyzing(false);
-          const config = CHANNEL_CONFIGS[selectedChannel] || CHANNEL_CONFIGS['Instagram Caption'];
-          setFindings(config.findings.map(f => ({ ...f, status: 'open' })));
+          setFindings(detectedFindings);
           setRestoredScoreDelta(0);
-          triggerNotification(`Governance pipeline completed for ${selectedChannel}! ${config.findings.length} findings evaluated and grounded.`);
-        }, 1100);
+          if (detectedFindings.length === 0) {
+            triggerNotification(`✓ Governance pipeline passed! Copy is 100% compliant with ${selectedChannel} rules.`);
+          } else {
+            triggerNotification(`Governance pipeline completed: ${detectedFindings.length} issue(s) detected in draft copy.`);
+          }
+        }, 500);
       };
 
       // Improvement 2: Deterministic Computer Vision & Palette Compliance Simulation (R1 & R3 Fallback)
@@ -2837,6 +2938,11 @@
           triggerNotification("Upload failed: 0-byte file");
           return;
         }
+        if (file.size > 25 * 1024 * 1024) {
+          setClinicalUploadError("Upload payload exceeds maximum limit of 25MB.");
+          triggerNotification("Upload failed: file exceeds 25MB limit");
+          return;
+        }
 
         setClinicalUploadError(null);
         setClinicalLoading(true);
@@ -2872,29 +2978,22 @@
                   triggerNotification(`✓ Extracted study ${newStudy.study_id} (${Object.keys(newStudy.endpoints || {}).length} endpoints)!`);
                   return;
                 } else {
-                  throw new Error(resJson.error || "Failed to parse study");
+                  throw new Error(resJson.error || resJson.message || "Failed to parse study");
                 }
               } else {
                 const errData = await resp.json().catch(() => ({}));
-                throw new Error(errData.error || `Server returned ${resp.status}`);
+                const errMsg = errData.message || errData.error || `Server returned HTTP ${resp.status}`;
+                setClinicalUploadError(errMsg);
+                setClinicalLoading(false);
+                setClinicalUploadProgress(null);
+                triggerNotification(`Upload rejected: ${errMsg}`);
+                return;
               }
             } catch (netErr) {
-              console.warn("Backend upload error, using local fallback parsing:", netErr);
-              const isAyush = file.name.toUpperCase().includes('AYUSH');
-              const fallbackTemplate = isAyush ? DEFAULT_CLINICAL_FIXTURES[1] : DEFAULT_CLINICAL_FIXTURES[0];
-              const extractedStudy = {
-                ...fallbackTemplate,
-                study_id: isAyush ? "LAB-AYUSH-904" : (file.name.includes('CS-2026') ? "CS-2026-88" : "STUDY-" + Math.floor(1000 + Math.random() * 9000)),
-                title: fallbackTemplate.title + " (Local Extracted)",
-                upload_filename: file.name,
-                uploaded_at: new Date().toISOString()
-              };
-              setClinicalStudies(prev => [extractedStudy, ...prev]);
-              setSelectedStudy(extractedStudy);
-              setShowClinicalUploadModal(false);
-              setClinicalUploadProgress(null);
+              setClinicalUploadError(netErr.message || "Network error while uploading clinical PDF.");
               setClinicalLoading(false);
-              triggerNotification(`✓ Ingested ${file.name} locally (Offline mode active)`);
+              setClinicalUploadProgress(null);
+              triggerNotification(`Upload error: ${netErr.message}`);
             }
           };
           reader.onerror = () => {
@@ -3772,6 +3871,14 @@
             </div>
           )}
 
+          {/* Render Cloud Cold-Start Waking Banner */}
+          {backendStatus === 'waking' && (
+            <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs text-amber-700 dark:text-amber-300 flex items-center justify-center space-x-2 transition-all">
+              <span className="text-sm animate-pulse">🚀</span>
+              <span className="font-medium">Connecting to Render cloud backend (spin-up may take 30-50s on free tier)...</span>
+            </div>
+          )}
+
           {/* Main Top Header */}
           <header className={`px-6 py-3.5 flex items-center justify-between sticky top-0 z-40 border-b ${headerBorder} ${
             isDark ? 'bg-slate-900/90 backdrop-blur-md' : 'bg-white/90 backdrop-blur-md'
@@ -4478,7 +4585,20 @@
                       </span>
                     </div>
 
-                    {findings.map((finding) => (
+                    {(!findings || findings.length === 0) ? (
+                      <div className={`p-8 rounded-xl border text-center ${cardStyle} ${headerBorder}`}>
+                        <div className="w-12 h-12 mx-auto rounded-full bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 text-xl mb-3">
+                          ✓
+                        </div>
+                        <h4 className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                          All Compliance Guidelines Passed
+                        </h4>
+                        <p className={`text-xs mt-1 max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          No regulatory violations, misleading claims, or brand tone issues detected for {selectedChannel}. Your copy is clear to publish.
+                        </p>
+                      </div>
+                    ) : (
+                      findings.map((finding) => (
                       <div
                         key={finding.id}
                         className={`border rounded-xl p-5 space-y-3.5 transition-all ${cardStyle} ${
@@ -4622,7 +4742,7 @@
                           )}
                         </div>
                       </div>
-                    ))}
+                    )))}
                   </div>
                 </div>
               )}
